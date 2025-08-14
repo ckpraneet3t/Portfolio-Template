@@ -1,0 +1,81 @@
+TABS / SECTIONS — WHERE TO EDIT WHAT
+
+Order in navbar (left to right) and on the single scroll page:
+Home → About → Experience → Projects → Ideas → Learning → Research → Talks → Contact → Blog
+
+Change tab order/labels and styles:
+- Nav order/labels: src/components/Nav.tsx → edit the `links` array
+- Nav styles (opaque pills, hover/active colors): src/components/Nav.tsx → the `className` string on the <Link>
+- Smooth scroll/offset: src/app/globals.css → `html { scroll-behavior; scroll-padding-top }`
+
+HOME (top hero)
+- Content layout: src/app/page.tsx (top of file, hero area)
+- Globe/network-sphere visuals: src/components/HeroOrb.tsx
+  - Speed: change `const time = ...` multiplier and `rot` multiplier
+  - Density: change `const count = 120` (more = denser)
+  - Brightness/colors: tweak fill/stroke colors near the bottom of draw
+
+ABOUT (#about)
+- Content copy and image: src/app/page.tsx → section with `id="about"`
+  - Edit the text paragraphs and the <Image src=...>
+  - Gray box container classes live on the wrapping <div> with `bg-white/10 ...`
+
+EXPERIENCE (#experience)
+- Items list: src/app/page.tsx → section with `id="experience"`
+  - Add/remove <li> entries (each is already a gray card)
+
+PROJECTS (#projects)
+- Card data (title, image, click-through URL): src/content/site.ts → `projects` array
+  - Each item: `{ title, image, url }`
+- Grid/layout of cards: src/app/page.tsx → section with `id="projects"`
+- Destination page for projects overview: src/app/projects/page.tsx
+  - If you want per-project pages, create `src/app/projects/[slug]/page.tsx` and point each project.url to `/projects/<slug>`
+
+IDEAS (#ideas)
+- Items list: src/app/page.tsx → section with `id="ideas"`
+  - Edit the array inside the map
+
+LEARNING (#learning)
+- Items list: src/app/page.tsx → section with `id="learning"`
+  - Edit the array inside the map
+
+RESEARCH (Resources) (#research)
+- Cards and copy: src/app/page.tsx → section with `id="research"`
+  - Edit the array of `{t, d}` inside the map
+- Dedicated resources page (optional): src/app/resources/page.tsx
+
+TALKS (#talks)
+- Items list: src/app/page.tsx → section with `id="talks"`
+  - Edit the array inside the map
+- Dedicated talks page (optional): src/app/talks/page.tsx
+
+CONTACT (#contact)
+- Email/GitHub displayed: src/app/page.tsx → section with `id="contact"`
+- Site-wide social links (for reuse): src/content/site.ts → `site.social`
+
+BLOG (separate pages)
+- Blog index list: src/app/blog/page.tsx (the `posts` array)
+- Individual posts data: src/app/blog/[slug]/page.tsx → `POSTS` object
+  - Add `{ slug: { title, date, body } }` and it will be statically exported via `generateStaticParams()`
+
+GLOBAL VISUALS / THEME
+- Background neon grid: src/components/Grid.tsx
+  - Density: `const spacing = 20 * dpr`
+  - Color/brightness: `hueBase`, `localHue`, `fillStyle`/`strokeStyle` alpha values
+  - Cursor influence radius/force: `radius`, factors in ox/oy
+- Custom cursor: src/components/Cursor.tsx
+  - Sizes/colors for dot, ring, trail
+- Global CSS tokens and easing: src/app/globals.css
+  - `--ease-sigmoid`, selection colors, page padding tokens
+- Fonts and global wrappers: src/app/layout.tsx
+  - Change fonts (IBM Plex Mono, Playfair), global components (Background, Cursor, Nav)
+
+SEO / META
+- Site meta/social base: src/content/site.ts → `site`
+- robots/sitemap: src/app/robots.ts, src/app/sitemap.ts
+
+NOTES
+- To add a new tab + section:
+  1) Add `#your-id` to `links` in src/components/Nav.tsx
+  2) Create matching `<section id="your-id">...</section>` in src/app/page.tsx (wrap content in the gray box container)
+- To remove a tab: remove it from `links` and (optionally) remove the matching section.

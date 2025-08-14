@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Next.js build folders
+.next/
+out/
+
+# VS Code settings folder
+.vscode/
+
+# Other generated files
+next-env.d.ts

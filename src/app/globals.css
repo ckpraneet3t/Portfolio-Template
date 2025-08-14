@@ -1,0 +1,215 @@
+/* globals.css - single drop-in file with clearer, more intuitive animations
+   Drop into styles/globals.css and restart dev server if needed.
+   All animations respect prefers-reduced-motion.
+*/
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==============
+   Tokens
+   ============== */
+:root{
+  --page-padding: 2rem;
+  --ease-sigmoid: cubic-bezier(0.4,0,0.2,1);
+
+  /* timing */
+  --t-fast: 140ms;
+  --t-med: 360ms;
+  --t-slow: 900ms;
+  --ease-soft: cubic-bezier(0.22,1,0.36,1);
+
+  /* cursor (neon yellow) */
+  --cursor-dot-size: 6px;
+  --cursor-ring-size: 34px;
+  --cursor-ring-color: #e6ff00;
+  --cursor-ring-hover-color: #fff27a;
+
+  /* panels */
+  --panel-bg: #0b0b0b;
+  --panel-bg-hover: #111213;
+
+  /* reveal distances */
+  --reveal-y: 10px;
+  --reveal-scale: 0.985;
+}
+
+/* desktop token tweak */
+@media (min-width: 768px) {
+  :root { --page-padding: 3.5rem; }
+}
+
+/* ==============
+   Base layout
+   ============== */
+html, body { height: 100%; }
+html { scroll-behavior: smooth; scroll-padding-top: 4rem; }
+body { @apply bg-paper text-ink antialiased selection:bg-accent/30 selection:text-ink; }
+
+/* smooth fonts */
+* { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+/* ==============
+   Background subtle motion (optional)
+   - very slow; disabled for reduced motion
+   ============== */
+.animated-gradient {
+  background: linear-gradient(120deg, #f7f7f5, #e9eceb, #f2f1ef);
+  background-size: 300% 300%;
+  animation: g-shift var(--t-slow) linear infinite;
+  will-change: background-position;
+}
+@keyframes g-shift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+@media (prefers-color-scheme: dark) { .animated-gradient { background: linear-gradient(120deg,#0a0a0a,#0f1115,#0b0d12); } }
+@media (prefers-reduced-motion: reduce) { .animated-gradient { animation: none; background-size: cover; } }
+
+/* ==============
+   Cursor (neon yellow)
+   - performant transforms only
+   ============== */
+.cursor-root { position: fixed; inset: 0; pointer-events: none; z-index: 50; mix-blend-mode: multiply; }
+.cursor-dot, .cursor-ring { position: absolute; top: 0; left: 0; transform: translate3d(-50%,-50%,0); will-change: transform, opacity; }
+.cursor-dot {
+  width: var(--cursor-dot-size); height: var(--cursor-dot-size);
+  border-radius: 9999px; background: #e6e6e6;
+  box-shadow: 0 0 8px rgba(230,230,230,0.08);
+  transition: transform var(--t-fast) var(--ease-soft), opacity var(--t-fast);
+}
+.cursor-ring {
+  width: var(--cursor-ring-size); height: var(--cursor-ring-size);
+  border-radius: 9999px;
+  border: 1px solid var(--cursor-ring-color);
+  transition: border-color var(--t-fast) var(--ease-soft), transform var(--t-fast) var(--ease-soft), opacity var(--t-fast);
+  will-change: transform, border-color, opacity;
+}
+.cursor-ring.hover { border-color: var(--cursor-ring-hover-color); transform: translate3d(-50%,-50%,0) scale(1.08); }
+.cursor-ring.active { transform: translate3d(-50%,-50%,0) scale(0.92); opacity: 0.92; }
+/* gentle pulse when idle (toggle via .pulse) */
+@keyframes cursor-pulse { 0% { box-shadow: 0 0 0 0 rgba(230,255,0,0.12), 0 0 12px rgba(230,255,0,0.05); } 50% { box-shadow: 0 0 0 8px rgba(230,255,0,0.04), 0 0 20px rgba(230,255,0,0.06); } 100% { box-shadow: 0 0 0 0 rgba(230,255,0,0.12), 0 0 12px rgba(230,255,0,0.05); } }
+.cursor-ring.pulse { animation: cursor-pulse 1800ms ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .cursor-ring.pulse { animation: none; } .cursor-dot, .cursor-ring { transition: none; } }
+
+/* ==============
+   Interactive easing (GPU-friendly)
+   ============== */
+a, button, .interactive, .cursor-hover, .cursor-hover * {
+  transition-timing-function: var(--ease-sigmoid) !important;
+  will-change: transform, opacity, box-shadow;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .interactive { transition-property: transform, box-shadow, background-color, color; transition-duration: var(--t-med); }
+  .interactive:hover, .interactive:focus-visible { transform: translate3d(0,-3px,0) scale(1.01); box-shadow: 0 8px 26px rgba(6,8,10,0.28); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .interactive { transform: none !important; box-shadow: none !important; transition: none !important; }
+}
+
+/* keyboard focus */
+:focus { outline: none; }
+:focus-visible { outline: 3px solid rgba(99,102,241,0.14); outline-offset: 4px; border-radius: 6px; }
+
+/* ==============
+   Entrance / reveal utilities (intuitive & composited)
+   Usage: add .fade-in / .slide-up / .side-expand to elements
+   ============== */
+
+/* fade-in: gentle opacity */
+@keyframes fade-in { from { opacity: 0; transform: translateY(calc(var(--reveal-y) * 0.6)); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fade-in var(--t-med) var(--ease-soft) both; will-change: opacity, transform; }
+
+/* slide-up: slightly stronger vertical entrance (good for images/cards) */
+@keyframes slide-up { from { opacity: 0; transform: translateY(var(--reveal-y)); } to { opacity: 1; transform: none; } }
+.slide-up { animation: slide-up calc(var(--t-med) + 80ms) var(--ease-soft) both; will-change: opacity, transform; }
+
+/* side-expand: horizontal expansion — good for panels/sections */
+@keyframes side-expand { from { transform: scaleX(var(--reveal-scale)); opacity: 0.96; transform-origin: center; } to { transform: scaleX(1); opacity: 1; } }
+.side-expand { transform-origin: center; animation: side-expand var(--t-med) var(--ease-soft) both; will-change: transform, opacity; }
+
+/* pop: small scale pop good for CTAs */
+@keyframes pop { from { transform: scale(0.985); opacity: 0.92; } 50% { transform: scale(1.03); } to { transform: scale(1); opacity: 1; } }
+.pop { animation: pop var(--t-fast) var(--ease-soft) both; will-change: transform, opacity; }
+
+/* stagger helper (apply to a wrapper to stagger children automatically)
+   Usage: <div class="stagger"><div class="stagger-item">...</div>...</div>
+   You can add data-stagger-step on wrapper to tune (default 80ms)
+*/
+.stagger > * { opacity: 0; transform: translateY(6px); will-change: opacity, transform; animation: stagger-fade var(--t-med) var(--ease-soft) both; animation-delay: calc(var(--stagger-index, 0) * 80ms); }
+@keyframes stagger-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* JS-less alternative: if you cannot set --stagger-index per-child, use these utility helper classes on children: .st-0 .st-1 ... */
+.st-0 { animation-delay: 0ms; } .st-1 { animation-delay: 80ms; } .st-2 { animation-delay: 160ms; } .st-3 { animation-delay: 240ms; } .st-4 { animation-delay: 320ms; }
+
+/* reduced motion fallback */
+@media (prefers-reduced-motion: reduce) {
+  .fade-in, .slide-up, .side-expand, .pop, .stagger > * { animation: none !important; transform: none !important; opacity: 1 !important; }
+}
+
+/* ==============
+   Panels & cards (fully opaque to hide grid)
+   ============== */
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  transition: background-color var(--t-med) var(--ease-soft), transform var(--t-med);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .panel:hover { background: var(--panel-bg-hover); transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) { .panel { transform: none; } }
+
+.card {
+  background: var(--panel-bg);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  transition: background-color var(--t-fast) var(--ease-soft);
+}
+
+/* small neon helper to use for emphasis/CTA */
+.neon { box-shadow: 0 6px 30px rgba(230,255,0,0.06), 0 0 8px rgba(230,255,0,0.04); }
+
+/* ==============
+   Small visual flourishes (use sparingly)
+   ============== */
+
+/* underline slide for links */
+.underline-animate { position: relative; }
+.underline-animate::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 2px;
+  background: linear-gradient(90deg, rgba(230,255,0,0.9), rgba(255,255,255,0.12));
+  transform: scaleX(0); transform-origin: left center; transition: transform var(--t-fast) var(--ease-soft);
+}
+.underline-animate:hover::after, .underline-animate:focus-visible::after { transform: scaleX(1); }
+
+/* slight float (subtle slow vertical float) - good for hero accents */
+@keyframes floaty { 0% { transform: translateY(0); } 50% { transform: translateY(-6px); } 100% { transform: translateY(0); } }
+.float-slow { animation: floaty 6s ease-in-out infinite; will-change: transform; }
+@media (prefers-reduced-motion: reduce) { .float-slow { animation: none; } }
+
+/* ==============
+   Performance & helpers
+   ============== */
+* { backface-visibility: hidden; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+/* accessibility helper */
+.sr-only {
+  position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important;
+}
+
+/* initial paint hint (use data-anim-preload to hide until hydrated) */
+[data-anim-preload] { opacity: 0; transform: translateY(4px); }
+
+/* ==============
+   Quick usage hints (inline, remove if you like):
+   - .fade-in            -> headings, small paragraphs on load
+   - .slide-up           -> image blocks, cards as they appear
+   - .side-expand        -> use on section panels to expand horizontally
+   - .pop                -> short-lived CTA pop on click/reveal
+   - .stagger / .st-N    -> add to lists for staggered reveals (use .st-0..st-4 on children)
+   - .interactive        -> add to buttons/links so cursor reacts and hover lifts
+   - .panel / .card      -> use as container classes for opaque boxed panels
+   - .underline-animate  -> link with animated underline
+   - .float-slow         -> subtle decorative float for hero accent
+   ============== */
