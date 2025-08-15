@@ -148,9 +148,9 @@ export default function HeroOrb() {
 
       // draw subtle globe atmosphere (ring + gradient)
       const grad = ctx.createRadialGradient(cx, cy, r * 0.02, cx, cy, r * 1.05);
-      grad.addColorStop(0, "rgba(10,20,24,0.00)");
-      grad.addColorStop(0.7, "rgba(6,18,20,0.035)");
-      grad.addColorStop(1, "rgba(6,18,20,0.12)");
+      grad.addColorStop(0, "rgba(18, 22, 24, 0)");
+      grad.addColorStop(0.7, "rgba(14, 24, 26, 0.04)");
+      grad.addColorStop(1, "rgba(0, 0, 0, 0.12)");
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 1.02, 0, Math.PI * 2);
@@ -188,7 +188,7 @@ export default function HeroOrb() {
           s += (baseTarget - s) * 0.12 + jitter;
 
           // rare random rewiring: sometimes choose a random candidate to start a weak link
-          if (Math.random() < 0.0009) s = Math.max(s, Math.random() * 0.6);
+          if (Math.random() < 0.009) s = Math.max(s, Math.random() * 0.6);
 
           s = clamp(s, 0, 1);
           linkStrength.set(key, s);
@@ -222,7 +222,8 @@ export default function HeroOrb() {
         const baseB = 170;
 
         const nodeAlpha = 0.9 * brightness;
-        const radius = Math.max(0.7, 1.6 * (0.85 + (p.z - zMin) / (zMax - zMin || 1))) * dpr;
+        // --- Reduced node thickness: lowered multiplier and minimum radius ---
+        const radius = Math.max(0.25, 0.6 * (0.85 + (p.z - zMin) / (zMax - zMin || 1))) * dpr;
 
         ctx.globalAlpha = nodeAlpha;
         ctx.fillStyle = `rgba(${baseR},${baseG},${baseB},1)`;
