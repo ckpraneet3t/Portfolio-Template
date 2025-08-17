@@ -22,9 +22,9 @@ export default function HeroOrb() {
     let count = 700;
     let r = 0;
 
-    const synapses: Array<{ from: number; to: number; progress: number }> = [];
-    // --- DEEP LEARNING VIBE: Track the activation wave progress ---
-    let activationWave = { progress: -1.5, speed: 0.01 };
+    const synapses: Array<{ from: number; to: number; progress: number }> = [];
+    // --- DEEP LEARNING VIBE: Track the activation wave progress ---
+    let activationWave = { progress: -1.5, speed: 0.01 };
 
 
     let neighborCandidates: number[][] = [];
@@ -52,9 +52,9 @@ export default function HeroOrb() {
         const x = rr * Math.sin(theta) * Math.cos(phi);
         const y = rr * Math.sin(theta) * Math.sin(phi);
         const z = rr * Math.cos(theta);
-        // --- COLOR CHANGE: Switched to a "Blackish" Void palette ---
-        const hue = 250 + Math.random() * 40;
-        nodes3D.push({ x, y, z, color: { h: hue, s: 80, l: 15 } }); // Very dark nodes
+        // --- COLOR CHANGE: Switched to a palette suitable for a light background ---
+        const hue = 200 + Math.random() * 50; // Cool blue/purple tones
+        nodes3D.push({ x, y, z, color: { h: hue, s: 70, l: 60 } }); // Brighter nodes
       }
 
       const N = nodes3D.length;
@@ -119,14 +119,14 @@ export default function HeroOrb() {
       ctx.clearRect(0, 0, w, h);
 
       const time = prefersReducedMotion ? 0 : now * 0.001;
-      const rotY = time * 0.1; // Slowed down rotation for a more majestic feel
+      const rotY = time * 0.1; 
       const rotX = Math.sin(time * 0.28) * 0.35 + 0.28;
 
-      // --- DEEP LEARNING VIBE: Update and reset the activation wave ---
-      activationWave.progress += activationWave.speed;
-      if (activationWave.progress > 1.5) {
-          activationWave.progress = -1.5;
-      }
+      // --- DEEP LEARNING VIBE: Update and reset the activation wave ---
+      activationWave.progress += activationWave.speed;
+      if (activationWave.progress > 1.5) {
+          activationWave.progress = -1.5;
+      }
 
       const lightDir = normalize({ x: 0.35, y: -0.6, z: 0.7 });
       const f = r * 1.9;
@@ -147,10 +147,11 @@ export default function HeroOrb() {
         projected.push({ x: cx + pr.x * scale, y: cy + pr.y * scale, z: zCamera, nx, ny, nz, scale, color: p.color });
       }
 
+      // --- COLOR CHANGE: Gradient adjusted for a light background ---
       const grad = ctx.createRadialGradient(cx, cy, r * 0.02, cx, cy, r * 1.05);
-      grad.addColorStop(0, "rgba(18, 22, 24, 0)");
-      grad.addColorStop(0.7, "rgba(14, 24, 26, 0.04)");
-      grad.addColorStop(1, "rgba(0, 0, 0, 0.12)");
+      grad.addColorStop(0, "rgba(255, 255, 255, 0)");
+      grad.addColorStop(0.7, "rgba(220, 230, 255, 0.08)");
+      grad.addColorStop(1, "rgba(200, 210, 230, 0.15)");
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 1.02, 0, Math.PI * 2);
@@ -187,8 +188,8 @@ export default function HeroOrb() {
           if (s > 0.04 && baseTarget > 0.02) {
             const alpha = clamp(s * 0.7 * (1 - dist / threshold), 0, 0.8);
             ctx.globalAlpha = alpha;
-            // --- COLOR CHANGE: Link color to a very dark purple ---
-            ctx.strokeStyle = `hsl(280, 80%, 20%)`;
+            // --- COLOR CHANGE: Link color to a dark, desaturated blue for contrast ---
+            ctx.strokeStyle = `hsl(220, 40%, 30%)`;
             ctx.beginPath();
             ctx.moveTo(pi.x, pi.y);
             ctx.lineTo(pj.x, pj.y);
@@ -204,14 +205,15 @@ export default function HeroOrb() {
         const ambient = 0.35;
         const brightness = clamp(ambient + diffuse * 0.65, 0, 1);
 
-        // --- DEEP LEARNING VIBE: Calculate node's position relative to the wave ---
-        const wavePos = p.y / r; // Wave travels vertically
-        const waveProximity = 1 - Math.abs(activationWave.progress - wavePos);
-        const waveGlow = clamp(waveProximity, 0, 1);
+        // --- DEEP LEARNING VIBE: Calculate node's position relative to the wave ---
+        const wavePos = p.y / r; // Wave travels vertically
+        const waveProximity = 1 - Math.abs(activationWave.progress - wavePos);
+        const waveGlow = clamp(waveProximity, 0, 1);
 
         const hue = (p.color.h + time * 20) % 360;
-        // Base lightness is dark, but flares up with the wave and diffuse lighting
-        const lightness = p.color.l * brightness + waveGlow * 50;
+        // --- COLOR CHANGE: Adjusted lightness calculation for a light background ---
+        // Base lightness is brighter, and flares up less dramatically to avoid washing out to white.
+        const lightness = p.color.l * brightness + waveGlow * 30;
         const nodeColor = `hsl(${hue}, ${p.color.s}%, ${lightness}%)`;
 
         const nodeAlpha = 0.9;
@@ -224,49 +226,50 @@ export default function HeroOrb() {
         ctx.fill();
       }
 
-      if (frame % 5 === 0 && synapses.length < 20) {
-          const fromIndex = Math.floor(Math.random() * nodes3D.length);
-          const toIndex = neighborCandidates[fromIndex][Math.floor(Math.random() * 6)];
-          if (fromIndex !== toIndex) {
-            synapses.push({ from: fromIndex, to: toIndex, progress: 0 });
-          }
-      }
+      if (frame % 5 === 0 && synapses.length < 20) {
+          const fromIndex = Math.floor(Math.random() * nodes3D.length);
+          const toIndex = neighborCandidates[fromIndex][Math.floor(Math.random() * 6)];
+          if (fromIndex !== toIndex) {
+            synapses.push({ from: fromIndex, to: toIndex, progress: 0 });
+          }
+      }
 
-      ctx.lineWidth = 1.5 * dpr;
-      for (let i = synapses.length - 1; i >= 0; i--) {
-          const synapse = synapses[i];
-          synapse.progress += 0.04;
+      ctx.lineWidth = 1.5 * dpr;
+      for (let i = synapses.length - 1; i >= 0; i--) {
+          const synapse = synapses[i];
+          synapse.progress += 0.04;
 
-          if (synapse.progress >= 1) {
-              synapses.splice(i, 1);
-          } else {
-              const fromNode = projected[synapse.from];
-              const toNode = projected[synapse.to];
+          if (synapse.progress >= 1) {
+              synapses.splice(i, 1);
+          } else {
+              const fromNode = projected[synapse.from];
+              const toNode = projected[synapse.to];
 
-              if(!fromNode || !toNode) continue;
+              if(!fromNode || !toNode) continue;
 
-              const startX = fromNode.x;
-              const startY = fromNode.y;
-              const endX = toNode.x;
-              const endY = toNode.y;
+              const startX = fromNode.x;
+              const startY = fromNode.y;
+              const endX = toNode.x;
+              const endY = toNode.y;
 
-              const currentX = startX + (endX - startX) * synapse.progress;
-              const currentY = startY + (endY - startY) * synapse.progress;
-              
-              const pulseRadius = (1 - Math.abs(0.5 - synapse.progress) * 2) * 3 * dpr;
+              const currentX = startX + (endX - startX) * synapse.progress;
+              const currentY = startY + (endY - startY) * synapse.progress;
+              
+              const pulseRadius = (1 - Math.abs(0.5 - synapse.progress) * 2) * 3 * dpr;
 
-              ctx.globalAlpha = (1 - Math.abs(0.5 - synapse.progress) * 2);
-              // --- COLOR CHANGE: Synapse pulse to a brilliant magenta ---
-              ctx.fillStyle = `hsl(310, 100%, 75%)`;
-              ctx.beginPath();
-              ctx.arc(currentX, currentY, pulseRadius, 0, Math.PI * 2);
-              ctx.fill();
-          }
-      }
+              ctx.globalAlpha = (1 - Math.abs(0.5 - synapse.progress) * 2);
+              // --- COLOR CHANGE: Synapse pulse to a deeper magenta for visibility ---
+              ctx.fillStyle = `hsl(300, 100%, 65%)`;
+              ctx.beginPath();
+              ctx.arc(currentX, currentY, pulseRadius, 0, Math.PI * 2);
+              ctx.fill();
+          }
+      }
 
 
       ctx.globalAlpha = 0.06;
-      ctx.strokeStyle = "rgba(10,30,34,1)";
+      // --- COLOR CHANGE: Border color to a light grey ---
+      ctx.strokeStyle = "rgba(180,190,210,1)";
       ctx.lineWidth = 2 * dpr;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 0.99, 0, Math.PI * 2);
