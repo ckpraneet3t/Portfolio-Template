@@ -240,3 +240,299 @@ export default function HeroOrb() {
 
   return <canvas ref={canvasRef} className="block" aria-hidden />;
 }
+"use client";
+
+import { useEffect, useRef } from "react";
+
+export default function HeroOrb() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const prefersReducedMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let raf = 0;
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    const nodes3D: Array<{ x: number; y: number; z: number; color: { h: number; s: number; l: number } }> = [];
+    let count = 700;
+    let r = 0;
+
+    // --- QUIRKY STUFF: Define satellite properties ---
+    const satellite1 = { angle: 0, yOffset: 0, orbitRadius: 0 };
+    const satellite2 = { angle: Math.PI, yOffset: 0, orbitRadius: 0 };
+
+
+    let neighborCandidates: number[][] = [];
+    const linkStrength = new Map<string, number>();
+    let frame = 0;
+
+    function sizeCanvas() {
+      if (!canvas) return;
+      const size = Math.min(640, Math.floor(window.innerWidth * 0.8));
+      canvas.width = Math.floor(size * dpr);
+      canvas.height = Math.floor(size * dpr);
+      canvas.style.width = `${size}px`;
+      canvas.style.height = `${size}px`;
+      r = Math.min(canvas.width, canvas.height) * 0.36;
+
+      // --- QUIRKY STUFF: Set satellite orbit radius based on main orb size ---
+      satellite1.orbitRadius = r * 1.3;
+      satellite2.orbitRadius = r * 1.3;
+    }
+
+    function generateNodes() {
+      nodes3D.length = 0;
+      const rr = r * 0.94;
+      for (let i = 0; i < count; i++) {
+        const u = Math.random();
+        const v = Math.random();
+        const theta = Math.acos(1 - 2 * u);
+        const phi = 2 * Math.PI * v;
+        const x = rr * Math.sin(theta) * Math.cos(phi);
+        const y = rr * Math.sin(theta) * Math.sin(phi);
+        const z = rr * Math.cos(theta);
+        const hue = 240 + Math.random() * 60;
+        nodes3D.push({ x, y, z, color: { h: hue, s: 90, l: 65 } });
+      }
+
+      const N = nodes3D.length;
+      neighborCandidates = Array.from({ length: N }, () => []);
+      for (let i = 0; i < N; i++) {
+        const dists: Array<{ idx: number; d: number }> = [];
+        for (let j = 0; j < N; j++) {
+          if (i === j) continue;
+          const dx = nodes3D[i].x - nodes3D[j].x;
+          const dy = nodes3D[i].y - nodes3D[j].y;
+          const dz = nodes3D[i].z - nodes3D[j].z;
+          dists.push({ idx: j, d: dx * dx + dy * dy + dz * dz });
+        }
+        dists.sort((a, b) => a.d - b.d);
+        neighborCandidates[i] = dists.slice(0, 24).map((x) => x.idx);
+      }
+
+      linkStrength.clear();
+      for (let i = 0; i < N; i++) {
+        const list = neighborCandidates[i];
+        for (let k = 0; k < Math.min(6, list.length); k++) {
+          const j = list[k];
+          const a = Math.min(i, j);
+          const b = Math.max(i, j);
+          const key = `${a}-${b}`;
+          if (!linkStrength.has(key)) linkStrength.set(key, Math.random() * 0.6 + 0.1);
+        }
+      }
+    }
+
+    sizeCanvas();
+    generateNodes();
+    window.addEventListener("resize", () => {
+      sizeCanvas();
+      generateNodes();
+    });
+
+    function rotateXY(p: { x: number; y: number; z: number }, ax: number, ay: number) {
+      const cosy = Math.cos(ax);
+      const siny = Math.sin(ax);
+      const y1 = p.y * cosy - p.z * siny;
+      const z1 = p.y * siny + p.z * cosy;
+      const cosx = Math.cos(ay);
+      const sinx = Math.sin(ay);
+      const x2 = p.x * cosx + z1 * sinx;
+      const z2 = -p.x * sinx + z1 * cosx;
+      return { x: x2, y: y1, z: z2 };
+    }
+
+    function clamp(v: number, a = 0, b = 1) {
+      return Math.max(a, Math.min(b, v));
+    }
+
+    function draw(now: number) {
+      if (!ctx || !canvas) return;
+      frame++;
+      const w = canvas.width;
+      const h = canvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+
+      ctx.clearRect(0, 0, w, h);
+
+      const time = prefersReducedMotion ? 0 : now * 0.001;
+      const rotY = time * 0.3;
+      const rotX = Math.sin(time * 0.28) * 0.35 + 0.28;
+
+      const lightDir = normalize({ x: 0.35, y: -0.6, z: 0.7 });
+      const f = r * 1.9;
+
+      const projected: Array<{ x: number; y: number; z: number; nx: number; ny: number; nz: number; scale: number; color: { h: number; s: number; l: number } }> = [];
+      let zMin = Infinity;
+      let zMax = -Infinity;
+      for (let i = 0; i < nodes3D.length; i++) {
+        const p = nodes3D[i];
+        const pr = rotateXY(p, rotX, rotY);
+        const nx = pr.x / (r * 0.94);
+        const ny = pr.y / (r * 0.94);
+        const nz = pr.z / (r * 0.94);
+        const zCamera = pr.z;
+        if (zCamera < zMin) zMin = zCamera;
+        if (zCamera > zMax) zMax = zMax;
+        const scale = f / (f + zCamera);
+        projected.push({ x: cx + pr.x * scale, y: cy + pr.y * scale, z: zCamera, nx, ny, nz, scale, color: p.color });
+      }
+
+      const grad = ctx.createRadialGradient(cx, cy, r * 0.02, cx, cy, r * 1.05);
+      grad.addColorStop(0, "rgba(18, 22, 24, 0)");
+      grad.addColorStop(0.7, "rgba(14, 24, 26, 0.04)");
+      grad.addColorStop(1, "rgba(0, 0, 0, 0.12)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 1.02, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.lineWidth = 1 * dpr;
+      for (let i = 0; i < projected.length; i++) {
+        const pi = projected[i];
+        const cand = neighborCandidates[i];
+        if (!cand) continue;
+        for (let k = 0; k < Math.min(18, cand.length); k++) {
+          const j = cand[k];
+          if (j <= i) continue;
+          const pj = projected[j];
+          const dx = pi.x - pj.x;
+          const dy = pi.y - pj.y;
+          const dist = Math.hypot(dx, dy);
+
+          const avgScale = (pi.scale + pj.scale) * 0.5;
+          const threshold = (r * 0.28) * avgScale;
+          const baseTarget = clamp(1 - dist / threshold, 0, 1);
+
+          const a = Math.min(i, j);
+          const b = Math.max(i, j);
+          const key = `${a}-${b}`;
+          let s = linkStrength.get(key) ?? 0;
+
+          const jitter = (Math.random() - 0.5) * 0.04;
+          s += (baseTarget - s) * 0.12 + jitter;
+          if (Math.random() < 0.009) s = Math.max(s, Math.random() * 0.6);
+          s = clamp(s, 0, 1);
+          linkStrength.set(key, s);
+
+          if (s > 0.04 && baseTarget > 0.02) {
+            const alpha = clamp(s * 0.7 * (1 - dist / threshold), 0, 0.8);
+            ctx.globalAlpha = alpha;
+            ctx.strokeStyle = `hsl(300, 90%, 70%)`;
+            ctx.beginPath();
+            ctx.moveTo(pi.x, pi.y);
+            ctx.lineTo(pj.x, pj.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      for (let i = 0; i < projected.length; i++) {
+        const p = projected[i];
+        const ndotl = clamp(p.nx * lightDir.x + p.ny * lightDir.y + p.nz * lightDir.z, -1, 1);
+        const diffuse = clamp((ndotl + 1) / 2, 0, 1);
+        const ambient = 0.35;
+        const brightness = clamp(ambient + diffuse * 0.65, 0, 1);
+
+        const hue = (p.color.h + time * 20) % 360;
+        const lightness = p.color.l * brightness;
+        const nodeColor = `hsl(${hue}, ${p.color.s}%, ${lightness}%)`;
+
+        const nodeAlpha = 0.9;
+        const radius = Math.max(0.25, 0.6 * (0.85 + (p.z - zMin) / (zMax - zMin || 1))) * dpr;
+
+        ctx.globalAlpha = nodeAlpha;
+        ctx.fillStyle = nodeColor;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // --- QUIRKY STUFF: Update and draw satellites and their beams ---
+      ctx.globalAlpha = 1;
+      [satellite1, satellite2].forEach((sat, index) => {
+        const angleSpeed = index === 0 ? 0.8 : -0.6;
+        sat.angle += time * 0.0001 * angleSpeed;
+        
+        // Calculate 3D position
+        const sat3D = {
+            x: sat.orbitRadius * Math.cos(sat.angle),
+            y: r * 0.4 * Math.sin(sat.angle * 2), // Creates an inclined, non-circular orbit
+            z: sat.orbitRadius * Math.sin(sat.angle)
+        };
+
+        // Rotate with the main orb's tilt, but not its spin, for an independent feel
+        const satRotated = rotateXY(sat3D, rotX, 0); 
+        const scale = f / (f + satRotated.z);
+        const sat2D = {
+            x: cx + satRotated.x * scale,
+            y: cy + satRotated.y * scale,
+            z: satRotated.z
+        };
+
+        // Find closest node to connect to
+        let closestNode = null;
+        let min_dist = Infinity;
+        for (const p of projected) {
+            if (p.z > -r * 0.2) { // Only connect to nodes on the front
+                const d = Math.hypot(p.x - sat2D.x, p.y - sat2D.y);
+                if (d < min_dist) {
+                    min_dist = d;
+                    closestNode = p;
+                }
+            }
+        }
+
+        // Draw connection beam if close enough
+        if (closestNode && min_dist < r * 0.5) {
+            const pulse = (Math.sin(time * 4 + index * Math.PI) + 1) / 2; // 0 to 1 pulse
+            ctx.globalAlpha = pulse * 0.8;
+            ctx.strokeStyle = `hsl(180, 100%, 85%)`; // Bright cyan beam
+            ctx.lineWidth = (1 + pulse * 1.5) * dpr;
+            ctx.beginPath();
+            ctx.moveTo(sat2D.x, sat2D.y);
+            ctx.lineTo(closestNode.x, closestNode.y);
+            ctx.stroke();
+        }
+
+        // Draw the satellite
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = `hsl(180, 100%, 85%)`; // Bright cyan satellite
+        ctx.beginPath();
+        ctx.arc(sat2D.x, sat2D.y, 2 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+
+      ctx.globalAlpha = 0.06;
+      ctx.strokeStyle = "rgba(10,30,34,1)";
+      ctx.lineWidth = 2 * dpr;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.99, 0, Math.PI * 2);
+      ctx.stroke();
+
+      raf = requestAnimationFrame(draw);
+    }
+
+    raf = requestAnimationFrame(draw);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", () => {});
+    };
+
+    function normalize(v: { x: number; y: number; z: number }) {
+      const L = Math.hypot(v.x, v.y, v.z) || 1;
+      return { x: v.x / L, y: v.y / L, z: v.z / L };
+    }
+  }, [prefersReducedMotion]);
+
+  return <canvas ref={canvasRef} className="block" aria-hidden />;
+}
