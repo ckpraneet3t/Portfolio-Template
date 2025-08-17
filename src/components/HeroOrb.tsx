@@ -22,8 +22,9 @@ export default function HeroOrb() {
     let count = 700;
     let r = 0;
 
-    const SATELLITE_COUNT = 8;
-    const satellites: Array<{ angle: number; orbitRadius: number; speed: number }> = [];
+    const synapses: Array<{ from: number; to: number; progress: number }> = [];
+    // --- DEEP LEARNING VIBE: Track the activation wave progress ---
+    let activationWave = { progress: -1.5, speed: 0.01 };
 
 
     let neighborCandidates: number[][] = [];
@@ -38,15 +39,6 @@ export default function HeroOrb() {
       canvas.style.width = `${size}px`;
       canvas.style.height = `${size}px`;
       r = Math.min(canvas.width, canvas.height) * 0.36;
-
-      satellites.length = 0;
-      for (let i = 0; i < SATELLITE_COUNT; i++) {
-          satellites.push({
-              angle: (Math.PI * 2 / SATELLITE_COUNT) * i,
-              orbitRadius: r * (1.2 + Math.random() * 0.3),
-              speed: (0.5 + Math.random() * 0.5) * (Math.random() > 0.5 ? 1 : -1),
-          });
-      }
     }
 
     function generateNodes() {
@@ -60,10 +52,9 @@ export default function HeroOrb() {
         const x = rr * Math.sin(theta) * Math.cos(phi);
         const y = rr * Math.sin(theta) * Math.sin(phi);
         const z = rr * Math.cos(theta);
-        // --- COLOR CHANGE: Switched to a "Cosmic Void" palette (dark purples/indigos) ---
-        const hue = 240 + Math.random() * 60;
-        // --- COLOR CHANGE: Lowered lightness for a darker feel ---
-        nodes3D.push({ x, y, z, color: { h: hue, s: 95, l: 55 } });
+        // --- COLOR CHANGE: Switched to a "Blackish" Void palette ---
+        const hue = 250 + Math.random() * 40;
+        nodes3D.push({ x, y, z, color: { h: hue, s: 80, l: 15 } }); // Very dark nodes
       }
 
       const N = nodes3D.length;
@@ -101,29 +92,6 @@ export default function HeroOrb() {
       generateNodes();
     });
 
-    function drawSatelliteShape(sat2D: { x: number, y: number }, angle: number) {
-        // --- FIX: Added a null check for ctx to resolve the TypeScript error ---
-        if (!ctx) return;
-        ctx.save();
-        ctx.translate(sat2D.x, sat2D.y);
-        ctx.rotate(angle + Math.PI / 2);
-
-        const bodyW = 3 * dpr;
-        const bodyH = 3 * dpr;
-        const panelW = 8 * dpr;
-        const panelH = 2.5 * dpr;
-
-        // --- COLOR CHANGE: Satellite panels to a deep crimson ---
-        ctx.fillStyle = `hsl(0, 70%, 40%)`;
-        ctx.fillRect(-panelW / 2, -bodyH / 2, panelW, panelH);
-
-        // --- COLOR CHANGE: Satellite body to a brighter crimson ---
-        ctx.fillStyle = `hsl(0, 70%, 50%)`;
-        ctx.fillRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH);
-
-        ctx.restore();
-    }
-
     function rotateXY(p: { x: number; y: number; z: number }, ax: number, ay: number) {
       const cosy = Math.cos(ax);
       const siny = Math.sin(ax);
@@ -151,8 +119,14 @@ export default function HeroOrb() {
       ctx.clearRect(0, 0, w, h);
 
       const time = prefersReducedMotion ? 0 : now * 0.001;
-      const rotY = time * 0.3;
+      const rotY = time * 0.1; // Slowed down rotation for a more majestic feel
       const rotX = Math.sin(time * 0.28) * 0.35 + 0.28;
+
+      // --- DEEP LEARNING VIBE: Update and reset the activation wave ---
+      activationWave.progress += activationWave.speed;
+      if (activationWave.progress > 1.5) {
+          activationWave.progress = -1.5;
+      }
 
       const lightDir = normalize({ x: 0.35, y: -0.6, z: 0.7 });
       const f = r * 1.9;
@@ -213,8 +187,8 @@ export default function HeroOrb() {
           if (s > 0.04 && baseTarget > 0.02) {
             const alpha = clamp(s * 0.7 * (1 - dist / threshold), 0, 0.8);
             ctx.globalAlpha = alpha;
-            // --- COLOR CHANGE: Link color to a dark magenta ---
-            ctx.strokeStyle = `hsl(300, 70%, 50%)`;
+            // --- COLOR CHANGE: Link color to a very dark purple ---
+            ctx.strokeStyle = `hsl(280, 80%, 20%)`;
             ctx.beginPath();
             ctx.moveTo(pi.x, pi.y);
             ctx.lineTo(pj.x, pj.y);
@@ -230,8 +204,14 @@ export default function HeroOrb() {
         const ambient = 0.35;
         const brightness = clamp(ambient + diffuse * 0.65, 0, 1);
 
+        // --- DEEP LEARNING VIBE: Calculate node's position relative to the wave ---
+        const wavePos = p.y / r; // Wave travels vertically
+        const waveProximity = 1 - Math.abs(activationWave.progress - wavePos);
+        const waveGlow = clamp(waveProximity, 0, 1);
+
         const hue = (p.color.h + time * 20) % 360;
-        const lightness = p.color.l * brightness;
+        // Base lightness is dark, but flares up with the wave and diffuse lighting
+        const lightness = p.color.l * brightness + waveGlow * 50;
         const nodeColor = `hsl(${hue}, ${p.color.s}%, ${lightness}%)`;
 
         const nodeAlpha = 0.9;
@@ -244,51 +224,45 @@ export default function HeroOrb() {
         ctx.fill();
       }
 
-      ctx.globalAlpha = 1;
-      satellites.forEach((sat, index) => {
-        const angleSpeed = sat.speed;
-        sat.angle += time * 0.0001 * angleSpeed;
-        
-        const sat3D = {
-            x: sat.orbitRadius * Math.cos(sat.angle),
-            y: r * 0.4 * Math.sin(sat.angle * 2),
-            z: sat.orbitRadius * Math.sin(sat.angle)
-        };
+      if (frame % 5 === 0 && synapses.length < 20) {
+          const fromIndex = Math.floor(Math.random() * nodes3D.length);
+          const toIndex = neighborCandidates[fromIndex][Math.floor(Math.random() * 6)];
+          if (fromIndex !== toIndex) {
+            synapses.push({ from: fromIndex, to: toIndex, progress: 0 });
+          }
+      }
 
-        const satRotated = rotateXY(sat3D, rotX, 0); 
-        const scale = f / (f + satRotated.z);
-        const sat2D = {
-            x: cx + satRotated.x * scale,
-            y: cy + satRotated.y * scale,
-        };
+      ctx.lineWidth = 1.5 * dpr;
+      for (let i = synapses.length - 1; i >= 0; i--) {
+          const synapse = synapses[i];
+          synapse.progress += 0.04;
 
-        let closestNode = null;
-        let min_dist = Infinity;
-        for (const p of projected) {
-            if (p.z > -r * 0.2) {
-                const d = Math.hypot(p.x - sat2D.x, p.y - sat2D.y);
-                if (d < min_dist) {
-                    min_dist = d;
-                    closestNode = p;
-                }
-            }
-        }
+          if (synapse.progress >= 1) {
+              synapses.splice(i, 1);
+          } else {
+              const fromNode = projected[synapse.from];
+              const toNode = projected[synapse.to];
 
-        if (closestNode && min_dist < r * 0.5) {
-            const pulse = (Math.sin(time * 4 + index * Math.PI) + 1) / 2;
-            ctx.globalAlpha = pulse * 0.8;
-            // --- COLOR CHANGE: Satellite beam to a bright crimson ---
-            ctx.strokeStyle = `hsl(0, 70%, 60%)`;
-            ctx.lineWidth = (1 + pulse * 1.5) * dpr;
-            ctx.beginPath();
-            ctx.moveTo(sat2D.x, sat2D.y);
-            ctx.lineTo(closestNode.x, closestNode.y);
-            ctx.stroke();
-        }
+              if(!fromNode || !toNode) continue;
 
-        ctx.globalAlpha = 0.9;
-        drawSatelliteShape(sat2D, sat.angle);
-      });
+              const startX = fromNode.x;
+              const startY = fromNode.y;
+              const endX = toNode.x;
+              const endY = toNode.y;
+
+              const currentX = startX + (endX - startX) * synapse.progress;
+              const currentY = startY + (endY - startY) * synapse.progress;
+              
+              const pulseRadius = (1 - Math.abs(0.5 - synapse.progress) * 2) * 3 * dpr;
+
+              ctx.globalAlpha = (1 - Math.abs(0.5 - synapse.progress) * 2);
+              // --- COLOR CHANGE: Synapse pulse to a brilliant magenta ---
+              ctx.fillStyle = `hsl(310, 100%, 75%)`;
+              ctx.beginPath();
+              ctx.arc(currentX, currentY, pulseRadius, 0, Math.PI * 2);
+              ctx.fill();
+          }
+      }
 
 
       ctx.globalAlpha = 0.06;
