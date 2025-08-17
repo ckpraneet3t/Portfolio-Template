@@ -102,6 +102,8 @@ export default function HeroOrb() {
     });
 
     function drawSatelliteShape(sat2D: { x: number, y: number }, angle: number) {
+        // --- FIX: Added a null check for ctx to resolve the TypeScript error ---
+        if (!ctx) return;
         ctx.save();
         ctx.translate(sat2D.x, sat2D.y);
         ctx.rotate(angle + Math.PI / 2);
