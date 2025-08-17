@@ -18,17 +18,13 @@ export default function HeroOrb() {
     let raf = 0;
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
-    // node storage (local sphere coordinates)
-    const nodes3D: Array<{ x: number; y: number; z: number }> = [];
-    let count = 1200; // fewer nodes for smoother runtime
+    const nodes3D: Array<{ x: number; y: number; z: number; color: { h: number; s: number; l: number } }> = [];
+    // --- PERFORMANCE OPTIMIZATION: Reduced node count for smoother animation ---
+    let count = 700;
     let r = 0;
 
-    // neighbor candidates per node (precomputed by 3D distance)
     let neighborCandidates: number[][] = [];
-
-    // dynamic link strengths keyed by "i-j" (i < j)
     const linkStrength = new Map<string, number>();
-
     let frame = 0;
 
     function sizeCanvas() {
@@ -52,10 +48,12 @@ export default function HeroOrb() {
         const x = rr * Math.sin(theta) * Math.cos(phi);
         const y = rr * Math.sin(theta) * Math.sin(phi);
         const z = rr * Math.cos(theta);
-        nodes3D.push({ x, y, z });
+
+        // --- COLOR CHANGE: Switched to a deep indigo/violet palette for high contrast ---
+        const hue = 240 + Math.random() * 60;
+        nodes3D.push({ x, y, z, color: { h: hue, s: 90, l: 65 } });
       }
 
-      // build neighbor candidate lists (top N nearest by 3D distance)
       const N = nodes3D.length;
       neighborCandidates = Array.from({ length: N }, () => []);
       for (let i = 0; i < N; i++) {
@@ -68,11 +66,9 @@ export default function HeroOrb() {
           dists.push({ idx: j, d: dx * dx + dy * dy + dz * dz });
         }
         dists.sort((a, b) => a.d - b.d);
-        // keep top 24 candidates (enough for dynamic joining)
         neighborCandidates[i] = dists.slice(0, 24).map((x) => x.idx);
       }
 
-      // initialize strengths for a subset of pairs
       linkStrength.clear();
       for (let i = 0; i < N; i++) {
         const list = neighborCandidates[i];
@@ -93,7 +89,6 @@ export default function HeroOrb() {
       generateNodes();
     });
 
-    // rotate point by X (tilt) then Y (spin)
     function rotateXY(p: { x: number; y: number; z: number }, ax: number, ay: number) {
       const cosy = Math.cos(ax);
       const siny = Math.sin(ax);
@@ -121,16 +116,13 @@ export default function HeroOrb() {
       ctx.clearRect(0, 0, w, h);
 
       const time = prefersReducedMotion ? 0 : now * 0.001;
-      const rotY = time * 0.45; // steady spin
-      const rotX = Math.sin(time * 0.28) * 0.35 + 0.28; // gentle oscillating tilt
+      const rotY = time * 0.3;
+      const rotX = Math.sin(time * 0.28) * 0.35 + 0.28;
 
-      // lighting (to look like a globe)
       const lightDir = normalize({ x: 0.35, y: -0.6, z: 0.7 });
+      const f = r * 1.9;
 
-      const f = r * 1.9; // focal length
-
-      // project and compute depth stats
-      const projected: Array<{ x: number; y: number; z: number; nx: number; ny: number; nz: number; scale: number }> = [];
+      const projected: Array<{ x: number; y: number; z: number; nx: number; ny: number; nz: number; scale: number; color: { h: number; s: number; l: number } }> = [];
       let zMin = Infinity;
       let zMax = -Infinity;
       for (let i = 0; i < nodes3D.length; i++) {
@@ -143,10 +135,9 @@ export default function HeroOrb() {
         if (zCamera < zMin) zMin = zCamera;
         if (zCamera > zMax) zMax = zMax;
         const scale = f / (f + zCamera);
-        projected.push({ x: cx + pr.x * scale, y: cy + pr.y * scale, z: zCamera, nx, ny, nz, scale });
+        projected.push({ x: cx + pr.x * scale, y: cy + pr.y * scale, z: zCamera, nx, ny, nz, scale, color: p.color });
       }
 
-      // draw subtle globe atmosphere (ring + gradient)
       const grad = ctx.createRadialGradient(cx, cy, r * 0.02, cx, cy, r * 1.05);
       grad.addColorStop(0, "rgba(18, 22, 24, 0)");
       grad.addColorStop(0.7, "rgba(14, 24, 26, 0.04)");
@@ -156,26 +147,21 @@ export default function HeroOrb() {
       ctx.arc(cx, cy, r * 1.02, 0, Math.PI * 2);
       ctx.fill();
 
-      // draw dynamic links
       ctx.lineWidth = 1 * dpr;
       for (let i = 0; i < projected.length; i++) {
         const pi = projected[i];
         const cand = neighborCandidates[i];
         if (!cand) continue;
-        // consider up to 18 candidates for dynamic joining/breaking
         for (let k = 0; k < Math.min(18, cand.length); k++) {
           const j = cand[k];
-          if (j <= i) continue; // ensure each pair only once
+          if (j <= i) continue;
           const pj = projected[j];
           const dx = pi.x - pj.x;
           const dy = pi.y - pj.y;
           const dist = Math.hypot(dx, dy);
 
-          // threshold scaled by average depth so close-to-camera nodes keep tighter connections
           const avgScale = (pi.scale + pj.scale) * 0.5;
           const threshold = (r * 0.28) * avgScale;
-
-          // compute target strength based on 3D proximity projection
           const baseTarget = clamp(1 - dist / threshold, 0, 1);
 
           const a = Math.min(i, j);
@@ -183,22 +169,19 @@ export default function HeroOrb() {
           const key = `${a}-${b}`;
           let s = linkStrength.get(key) ?? 0;
 
-          // gradually move strength toward target with a bit of jitter so connections visibly form/break
           const jitter = (Math.random() - 0.5) * 0.04;
           s += (baseTarget - s) * 0.12 + jitter;
-
-          // rare random rewiring: sometimes choose a random candidate to start a weak link
           if (Math.random() < 0.009) s = Math.max(s, Math.random() * 0.6);
-
           s = clamp(s, 0, 1);
           linkStrength.set(key, s);
 
           if (s > 0.04 && baseTarget > 0.02) {
-            // alpha shaped by strength and distance
             const alpha = clamp(s * 0.7 * (1 - dist / threshold), 0, 0.8);
             ctx.globalAlpha = alpha;
-            // --- COLOR CHANGE: Switched to a vibrant, electric blue for high visibility ---
-            ctx.strokeStyle = `rgba(100, 200, 255, 1)`;
+
+            // --- PERFORMANCE OPTIMIZATION: Replaced expensive gradient with a single, fast color ---
+            ctx.strokeStyle = `hsl(300, 90%, 70%)`; // Vibrant magenta for high contrast
+
             ctx.beginPath();
             ctx.moveTo(pi.x, pi.y);
             ctx.lineTo(pj.x, pj.y);
@@ -207,31 +190,32 @@ export default function HeroOrb() {
         }
       }
 
-      // draw nodes with globe shading (diffuse + ambient)
       for (let i = 0; i < projected.length; i++) {
         const p = projected[i];
-        // diffuse shading based on normal dot light
         const ndotl = clamp(p.nx * lightDir.x + p.ny * lightDir.y + p.nz * lightDir.z, -1, 1);
         const diffuse = clamp((ndotl + 1) / 2, 0, 1);
         const ambient = 0.35;
         const brightness = clamp(ambient + diffuse * 0.65, 0, 1);
 
-        // --- COLOR CHANGE: Switched to a vibrant, electric blue for high visibility ---
-        const baseR = 100;
-        const baseG = 200;
-        const baseB = 255;
+        const hue = (p.color.h + time * 20) % 360;
+        const lightness = p.color.l * brightness;
+        const nodeColor = `hsl(${hue}, ${p.color.s}%, ${lightness}%)`;
 
-        const nodeAlpha = 0.9 * brightness;
+        const nodeAlpha = 0.9;
         const radius = Math.max(0.25, 0.6 * (0.85 + (p.z - zMin) / (zMax - zMin || 1))) * dpr;
 
         ctx.globalAlpha = nodeAlpha;
-        ctx.fillStyle = `rgba(${baseR},${baseG},${baseB},1)`;
+        ctx.fillStyle = nodeColor;
+            
+            // --- PERFORMANCE OPTIMIZATION: Removed expensive shadow/glow effect ---
+            // ctx.shadowColor = `hsl(${hue}, 90%, 65%)`;
+            // ctx.shadowBlur = 8 * dpr;
+
         ctx.beginPath();
         ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // gentle outer rim to emphasize globe boundary
       ctx.globalAlpha = 0.06;
       ctx.strokeStyle = "rgba(10,30,34,1)";
       ctx.lineWidth = 2 * dpr;
@@ -248,7 +232,6 @@ export default function HeroOrb() {
       window.removeEventListener("resize", () => {});
     };
 
-    // helpers
     function normalize(v: { x: number; y: number; z: number }) {
       const L = Math.hypot(v.x, v.y, v.z) || 1;
       return { x: v.x / L, y: v.y / L, z: v.z / L };
