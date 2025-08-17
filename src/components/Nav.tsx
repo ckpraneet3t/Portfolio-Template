@@ -3,76 +3,57 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 
 const links = [
   { href: "/", label: "Home" },
   { href: "#about", label: "About" },
   { href: "#experience", label: "Experience" },
   { href: "#projects", label: "Projects" },
-  { href: "#ideas", label: "Ideas" },
-  { href: "#learning", label: "Learning" },
-  { href: "#research", label: "Research" },
-  { href: "#talks", label: "Talks" },
+  { href: "#skills", label: "Skills" },
+  { href: "#achievements", label: "Achievements" },
+  { href: "#learning", label: "Learning & Ideas" },
   { href: "#contact", label: "Contact" },
 ];
 
 export default function Nav() {
   const pathname = usePathname();
   const [activeHash, setActiveHash] = useState<string | null>(null);
+  const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // Build a map of hash -> element id (without '#') to observe
+  // This effect tracks which section is visible on the screen.
   useEffect(() => {
-    // Only observe hash sections if we are on a route that contains them (same pathname)
-    // Collect ids for links that are in-page anchors
     const ids = links
       .map((l) => (l.href.startsWith("#") ? l.href.slice(1) : null))
       .filter(Boolean) as string[];
 
     if (!ids.length) return;
 
-    // Clean up previous observer
-    if (observerRef.current) {
-      observerRef.current.disconnect();
-      observerRef.current = null;
-    }
+    if (observerRef.current) observerRef.current.disconnect();
 
-    // IntersectionObserver: we want to mark a section active when its center is near viewport center
-    // rootMargin pulls the "active" zone toward the middle of the viewport for nicer UX
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        // Choose the visible entry with largest intersectionRatio
         let best: IntersectionObserverEntry | null = null;
         for (const e of entries) {
-          if (!best) {
-            if (e.isIntersecting) best = e;
-            continue;
-          }
-          if (e.isIntersecting && e.intersectionRatio > (best?.intersectionRatio ?? 0)) {
-            best = e;
+          if (!best || (e.isIntersecting && e.intersectionRatio > (best.intersectionRatio ?? 0))) {
+            best = e.isIntersecting ? e : best;
           }
         }
-        if (best && best.target && best.isIntersecting) {
+        if (best) {
           setActiveHash(`#${best.target.id}`);
         }
       },
-      {
-        root: null,
-        rootMargin: "-40% 0px -40% 0px", // active zone roughly the viewport middle
-        threshold: [0.25, 0.5, 0.75],
-      }
+      { rootMargin: "-40% 0px -40% 0px", threshold: [0.25, 0.5, 0.75] }
     );
 
-    // Observe existing elements
     ids.forEach((id) => {
       const el = document.getElementById(id);
       if (el) observerRef.current?.observe(el);
     });
 
-    // If user navigates directly to a URL with a hash, reflect that quickly
-    const onHash = () => setActiveHash(window.location.hash || null);
+    const onHash = () => setActiveHash(window.location.hash || "/");
     window.addEventListener("hashchange", onHash, false);
-    // initialize from current hash
     onHash();
 
     return () => {
@@ -81,74 +62,65 @@ export default function Nav() {
     };
   }, [pathname]);
 
-  // When pathname changes, reset the active hash if we're on a different page
   useEffect(() => {
-    // If user navigated away to root or blog, clear anchor highlight
-    if (!pathname || pathname !== "/") {
-      // If pathname is / and there is a hash, keep that; otherwise clear
-      // But keep anchor highlight when pathname === '/' (handled by IntersectionObserver)
-      // For other routes, clear hash highlight
-      if (pathname !== "/") setActiveHash(null);
-    } else {
-      // keep existing hash
-    }
+    if (pathname !== "/") setActiveHash(null);
   }, [pathname]);
-
-  // helper to handle same-page anchor clicks with smooth scroll
+  
   function handleAnchorClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
     if (!href.startsWith("#")) return;
     e.preventDefault();
-    const id = href.slice(1);
-    const el = document.getElementById(id);
+    const el = document.getElementById(href.slice(1));
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
-      // update URL hash without causing a jump
-      if (window && window.history && window.location.hash !== href) {
-        window.history.pushState({}, "", href);
-      }
+      if (window.history.pushState) window.history.pushState({}, "", href);
       setActiveHash(href);
-    } else {
-      // fallback to default behavior if the element not present
-      window.location.hash = href;
     }
   }
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 backdrop-blur bg-black/30 border-b border-white/10">
-      <nav className="mx-auto max-w-6xl px-[var(--page-padding)] h-16 flex items-center gap-7 text-[0.95rem] tracking-wider2">
-        <div className="mr-auto font-display text-lg">AK</div>
+      <nav className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
+        <Link href="/" className="font-display text-lg text-white">PA</Link>
 
-        {links.map((l) => {
-          // Active detection:
-          // - For root: pathname === '/'
-          // - For anchors: activeHash matches
-          // - For full-routes: pathname === l.href
-          const isAnchor = l.href.startsWith("#");
-          const active =
-            l.href === "/"
-              ? pathname === "/"
-              : isAnchor
-              ? activeHash === l.href
-              : pathname === l.href;
+        <ul
+          className="flex items-center gap-2 text-sm"
+          onMouseLeave={() => setHoveredLink(null)}
+        >
+          {links.map((l) => {
+            const isAnchor = l.href.startsWith("#");
+            const active = (l.href === "/" && pathname === "/" && !activeHash) || (isAnchor && activeHash === l.href);
+            
+            return (
+              <li
+                key={l.href}
+                className="relative"
+                onMouseEnter={() => setHoveredLink(l.href)}
+              >
+                <Link
+                  href={l.href}
+                  onClick={(e) => isAnchor && handleAnchorClick(e, l.href)}
+                  className={`relative z-10 block px-4 py-2 transition-colors ${
+                    hoveredLink === l.href || active ? "text-white" : "text-white/60"
+                  }`}
+                >
+                  {l.label}
+                </Link>
 
-          return (
-            <Link
-              key={l.href}
-              href={l.href}
-              // For anchors we prevent default & smooth-scroll, else let Next handle navigation
-              onClick={(e) => isAnchor && handleAnchorClick(e, l.href)}
-              // accessibility: mark the active item
-              aria-current={active ? (l.href === "/" || !isAnchor ? "page" : "true") : undefined}
-              className={`interactive motion-safe:transition-colors transition-[background-color,color] active:scale-95 px-3 py-1 rounded-md border ${
-                active
-                  ? "text-white bg-white/30 border-white/40"
-                  : "text-white/90 hover:text-white bg-white/15 hover:bg-white/25 border-white/15"
-              }`}
-            >
-              {l.label}
-            </Link>
-          );
-        })}
+                {/* The Spotlight Effect */}
+                {(hoveredLink === l.href || active) && (
+                  <motion.div
+                    // This ID allows Framer Motion to animate the div between different list items.
+                    layoutId="nav-spotlight"
+                    // A soft, circular gradient creates the spotlight.
+                    className="absolute inset-0 rounded-full [background:radial-gradient(circle_at_center,_rgba(255,255,255,0.07)_0%,_rgba(255,255,255,0)_60%)]"
+                    // A gentle, non-spring transition for a calm and smooth feel.
+                    transition={{ type: "tween", ease: "circOut", duration: 0.4 }}
+                  />
+                )}
+              </li>
+            );
+          })}
+        </ul>
       </nav>
     </header>
   );
