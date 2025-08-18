@@ -3,42 +3,46 @@
 import { useEffect, useRef } from "react";
 
 /**
- * RhythmicGrid — smoother, pulsing particle motion driven by a global beat.
- * - Single export, "use client" at top.
- * - Tune CFG to change tempo / strength / smoothness.
+ * GentleSongGrid
+ * - Smooth, continuous movement like ambient music
+ * - No beats or pulses, just gentle flowing motion
+ * - Particles drift in soft waves and currents
  */
 
 const CFG = {
   GRID_SPACING: 36,
   GRID_POINT_RADIUS: 1.2,
-  GRID_ALPHA: 0.16,
+  GRID_ALPHA: 0.14,
 
-  RIPPLE_SCALE: 0.0016,
+  RIPPLE_SCALE: 0.001,
 
-  PARTICLE_COUNT: 140,
-  PARTICLE_SIZE: 1.2,
-  PARTICLE_SPEED_LIMIT: 4.0,
+  PARTICLE_COUNT: 110,
+  PARTICLE_SIZE: 1.1,
+  PARTICLE_SPEED_LIMIT: 1.8,
 
-  // spring to grid (gentle baseline restoring force)
-  SPRING_K: 0.008,
+  // very gentle spring to grid
+  SPRING_K: 0.003,
 
-  // continuous damping (used multiplicatively each frame for smoothness)
-  DAMPING: 0.3,
+  // smooth continuous damping
+  DAMPING: 0.08,
 
-  // inter-particle repulsion
-  REPULSION_RADIUS: 18,
-  REPULSION_STRENGTH: 0.03,
+  // light repulsion to keep particles spread
+  REPULSION_RADIUS: 16,
+  REPULSION_STRENGTH: 0.02,
 
-  HOVER_PARALLAX: 12,
+  HOVER_PARALLAX: 8,
 
-  // Rhythm / beat params (tweak these)
-  BPM: 30,                // beats per minute (tempo)
-  BEAT_MAG: 0.8,          // strength of the pulse pushing particles outward
-  BEAT_DECAY: 7.5,        // how quickly the pulse decays after each beat (higher = sharper hit)
-  SYNCOPATION: 0.12,      // secondary offset pulse amplitude (creates off-beat feel)
-  SWIRL: 0.65,            // how much the beat adds tangential (rotational) motion
-  PHASE_VARIATION: 0.9,   // per-particle phase modulation of how they react to beats
-  NOISE_STRENGTH: 0.06,   // tiny organic noise for character
+  // continuous flow parameters
+  FLOW_STRENGTH: 0.025,      // overall strength of flowing motion
+  WAVE_AMPLITUDE: 0.035,     // how much particles sway in gentle waves
+  DRIFT_SPEED: 0.15,         // speed of the invisible "current"
+  WAVE_FREQUENCY: 0.3,       // frequency of the gentle waves
+  BREATHING_AMPLITUDE: 0.18, // gentle size breathing
+  BREATHING_SPEED: 0.4,      // speed of size changes
+
+  // organic noise for natural feel
+  NOISE_STRENGTH: 0.015,
+  NOISE_SPEED: 0.08,
 };
 
 class SimpleNoise {
@@ -52,17 +56,27 @@ class SimpleNoise {
     }
     for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
   }
-  private fade(t: number) { return t * t * (3 - 2 * t); }
-  private lerp(a: number, b: number, t: number) { return a + t * (b - a); }
+  private fade(t: number) {
+    return t * t * (3 - 2 * t);
+  }
+  private lerp(a: number, b: number, t: number) {
+    return a + t * (b - a);
+  }
   private grad(hash: number, x: number, y: number) {
-    const h = hash & 3; const u = h < 2 ? x : y; const v = h < 2 ? y : x;
+    const h = hash & 3;
+    const u = h < 2 ? x : y;
+    const v = h < 2 ? y : x;
     return ((h & 1) ? -u : u) + ((h & 2) ? -2 * v : 2 * v);
   }
   noise(x: number, y: number) {
-    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
-    const xf = x - Math.floor(x), yf = y - Math.floor(y);
-    const top = this.perm[this.perm[X] + Y], top1 = this.perm[this.perm[X + 1] + Y];
-    const a = this.grad(top, xf, yf), b = this.grad(top1, xf - 1, yf);
+    const X = Math.floor(x) & 255,
+      Y = Math.floor(y) & 255;
+    const xf = x - Math.floor(x),
+      yf = y - Math.floor(y);
+    const top = this.perm[this.perm[X] + Y];
+    const top1 = this.perm[this.perm[X + 1] + Y];
+    const a = this.grad(top, xf, yf);
+    const b = this.grad(top1, xf - 1, yf);
     const u = this.fade(xf);
     return this.lerp(a, b, u) * 0.5;
   }
@@ -70,44 +84,57 @@ class SimpleNoise {
 const NOISE = new SimpleNoise();
 
 type Particle = {
-  x: number; y: number;
-  vx: number; vy: number;
-  baseS: number; s: number;
-  phase: number;      // per-particle phase to stagger beats
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  baseS: number;
+  s: number;
+  flowPhase: number;    // for gentle wave motion
+  breathPhase: number;  // for size breathing
 };
 
-export default function RhythmicGrid() {
+export default function GentleSongGrid() {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const offGrid = useRef<HTMLCanvasElement | null>(null);
   const particles = useRef<Particle[]>([]);
   const pointer = useRef({ x: 0, y: 0, active: false });
 
   useEffect(() => {
-    const canvas = ref.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d", { alpha: true }); if (!ctx) return;
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) return;
 
     let raf: number | null = null;
-    let w = window.innerWidth, h = window.innerHeight;
+    let w = window.innerWidth;
+    let h = window.innerHeight;
     let t0 = performance.now();
 
     const resize = () => {
       const dpr = Math.max(1, window.devicePixelRatio || 1);
-      w = Math.max(1, window.innerWidth); h = Math.max(1, window.innerHeight);
-      canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
-      canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
+      w = Math.max(1, window.innerWidth);
+      h = Math.max(1, window.innerHeight);
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // bake crisp static grid to offscreen canvas
+      // create soft static grid
       const g = document.createElement("canvas");
-      g.width = Math.floor(w * dpr); g.height = Math.floor(h * dpr);
+      g.width = Math.floor(w * dpr);
+      g.height = Math.floor(h * dpr);
       const gctx = g.getContext("2d");
       if (gctx) {
-        gctx.scale(dpr, dpr); // draw in CSS px on offscreen
+        gctx.scale(dpr, dpr);
         gctx.clearRect(0, 0, w, h);
         gctx.fillStyle = `rgba(0,0,0,${CFG.GRID_ALPHA})`;
         for (let y = 0; y < h; y += CFG.GRID_SPACING) {
           for (let x = 0; x < w; x += CFG.GRID_SPACING) {
-            gctx.beginPath(); gctx.arc(x, y, CFG.GRID_POINT_RADIUS, 0, Math.PI * 2); gctx.fill();
+            gctx.beginPath();
+            gctx.arc(x, y, CFG.GRID_POINT_RADIUS, 0, Math.PI * 2);
+            gctx.fill();
           }
         }
       }
@@ -117,132 +144,165 @@ export default function RhythmicGrid() {
     const initParticles = () => {
       particles.current = [];
       for (let i = 0; i < CFG.PARTICLE_COUNT; i++) {
-        const px = Math.random() * w, py = Math.random() * h;
+        const px = Math.random() * w;
+        const py = Math.random() * h;
         const a = Math.random() * Math.PI * 2;
-        const baseS = CFG.PARTICLE_SIZE * (0.7 + Math.random() * 1.1);
-        const phase = Math.random() * Math.PI * 2;
-        particles.current.push({ x: px, y: py, vx: Math.cos(a) * 0.6, vy: Math.sin(a) * 0.6, baseS, s: baseS, phase });
+        const baseS = CFG.PARTICLE_SIZE * (0.75 + Math.random() * 0.8);
+        const flowPhase = Math.random() * Math.PI * 2;
+        const breathPhase = Math.random() * Math.PI * 2;
+        particles.current.push({
+          x: px,
+          y: py,
+          vx: Math.cos(a) * 0.2,
+          vy: Math.sin(a) * 0.2,
+          baseS,
+          s: baseS,
+          flowPhase,
+          breathPhase,
+        });
       }
     };
 
-    const onMouseMove = (e: MouseEvent) => { pointer.current.x = e.clientX; pointer.current.y = e.clientY; pointer.current.active = true; };
-    const onTouchMove = (e: TouchEvent) => { const t = e.touches[0]; if (!t) return; pointer.current.x = t.clientX; pointer.current.y = t.clientY; pointer.current.active = true; };
-    const onLeave = () => { pointer.current.active = false; };
-
-    // percussive envelope: fast attack at beat start, exponential decay
-    const beatEnvelope = (t: number, bpm: number, decay: number, offset = 0) => {
-      const hz = bpm / 60;
-      const phase = (t * hz + offset) % 1; // [0..1)
-      return Math.exp(-phase * decay);     // 1 at phase=0, decays toward 0
+    const onMouseMove = (e: MouseEvent) => {
+      pointer.current.x = e.clientX;
+      pointer.current.y = e.clientY;
+      pointer.current.active = true;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      pointer.current.x = t.clientX;
+      pointer.current.y = t.clientY;
+      pointer.current.active = true;
+    };
+    const onLeave = () => {
+      pointer.current.active = false;
     };
 
     const draw = (now: number) => {
-      const dt = Math.min(40, now - t0) / 1000; t0 = now;
+      const dt = Math.min(40, now - t0) / 1000;
+      t0 = now;
       ctx.clearRect(0, 0, w, h);
 
-      // draw static grid
-      if (offGrid.current) ctx.drawImage(offGrid.current, 0, 0, w, h);
+      if (offGrid.current) ctx.drawImage(offGrid.current, 0, 0);
 
       const time = now * 0.001;
       const px = pointer.current.active ? ((pointer.current.x - w * 0.5) / w) * CFG.HOVER_PARALLAX : 0;
       const py = pointer.current.active ? ((pointer.current.y - h * 0.5) / h) * CFG.HOVER_PARALLAX : 0;
 
-      // rhythmic envelopes
-      const mainEnv = beatEnvelope(time, CFG.BPM, CFG.BEAT_DECAY, 0);
-      const offEnv = beatEnvelope(time, CFG.BPM, CFG.BEAT_DECAY, 0.5) * CFG.SYNCOPATION;
-      const beat = Math.max(0, mainEnv + offEnv); // combined pulse
-
       const P = particles.current;
-      const step = dt * 60; // retain frame-rate normalization for simpler tuning
+      const step = dt * 60;
+
+      // global gentle wave motion across the entire field
+      const globalWaveX = Math.sin(time * CFG.WAVE_FREQUENCY) * CFG.WAVE_AMPLITUDE;
+      const globalWaveY = Math.cos(time * CFG.WAVE_FREQUENCY * 0.8 + 1.2) * CFG.WAVE_AMPLITUDE;
 
       for (let i = 0; i < P.length; i++) {
         const p = P[i];
 
-        // nearest grid node baseline
+        // slowly evolve phases for continuous motion
+        p.flowPhase += CFG.DRIFT_SPEED * dt;
+        p.breathPhase += CFG.BREATHING_SPEED * dt;
+
+        // gentle spring toward nearest grid node
         const gx = Math.round(p.x / CFG.GRID_SPACING) * CFG.GRID_SPACING;
         const gy = Math.round(p.y / CFG.GRID_SPACING) * CFG.GRID_SPACING;
-        const dx = gx - p.x, dy = gy - p.y;
-
-        // spring toward grid (gentle)
+        const dx = gx - p.x;
+        const dy = gy - p.y;
         let fx = dx * CFG.SPRING_K;
         let fy = dy * CFG.SPRING_K;
 
-        // radial vector from node to particle (direction outward)
-        let rx = p.x - gx, ry = p.y - gy;
-        const rlen = Math.hypot(rx, ry) + 1e-6;
-        rx /= rlen; ry /= rlen;
+        // continuous flowing motion - each particle follows gentle sine waves
+        const flowX = Math.sin(p.flowPhase + p.x * 0.008) * CFG.FLOW_STRENGTH;
+        const flowY = Math.cos(p.flowPhase * 0.7 + p.y * 0.006 + 2.1) * CFG.FLOW_STRENGTH;
+        fx += flowX;
+        fy += flowY;
 
-        // per-particle phase-modulated reaction to beat -> smooth stagger
-        const phaseFactor = 1 + CFG.PHASE_VARIATION * Math.sin(p.phase + time * 2.0);
+        // global wave influence
+        fx += globalWaveX;
+        fy += globalWaveY;
 
-        // beat-driven outward push and tangential swirl
-        const beatAmp = CFG.BEAT_MAG * beat * phaseFactor;
-        fx += rx * beatAmp;
-        fy += ry * beatAmp;
+        // gentle cross-currents for more interesting motion
+        const crossCurrent = Math.sin(time * 0.25 + (p.x + p.y) * 0.005) * CFG.FLOW_STRENGTH * 0.6;
+        fx += crossCurrent * Math.cos(time * 0.18);
+        fy += crossCurrent * Math.sin(time * 0.22);
 
-        // swirl/tangential component (rotational feel)
-        const swirl = CFG.SWIRL * beat * phaseFactor;
-        fx += -ry * swirl;
-        fy += rx * swirl;
+        // organic perlin noise for natural micro-movements
+        const n1 = NOISE.noise(p.x * CFG.RIPPLE_SCALE + time * CFG.NOISE_SPEED, p.y * CFG.RIPPLE_SCALE + time * CFG.NOISE_SPEED * 0.8);
+        const n2 = NOISE.noise(p.x * CFG.RIPPLE_SCALE + time * CFG.NOISE_SPEED * 1.3 + 100, p.y * CFG.RIPPLE_SCALE + time * CFG.NOISE_SPEED * 0.9 + 200);
+        fx += Math.cos(n1 * Math.PI * 2) * CFG.NOISE_STRENGTH;
+        fy += Math.sin(n2 * Math.PI * 2) * CFG.NOISE_STRENGTH;
 
-        // tiny Perlin noise nudges for organic smoothness
-        const n = NOISE.noise(p.x * CFG.RIPPLE_SCALE + time * 0.6, p.y * CFG.RIPPLE_SCALE + time * 0.8);
-        fx += Math.cos(n * Math.PI * 2) * CFG.NOISE_STRENGTH;
-        fy += Math.sin(n * Math.PI * 2) * CFG.NOISE_STRENGTH;
-
-        // neighbor repulsion (light)
+        // gentle inter-particle repulsion
         for (let j = 0; j < P.length; j++) {
           if (j === i) continue;
           const q = P[j];
-          const rx2 = p.x - q.x, ry2 = p.y - q.y;
-          const rsq = rx2 * rx2 + ry2 * ry2;
-          const r2 = Math.sqrt(rsq) + 1e-6;
-          if (r2 < CFG.REPULSION_RADIUS) {
-            const rep = (1 - r2 / CFG.REPULSION_RADIUS) * CFG.REPULSION_STRENGTH;
-            fx += (rx2 / r2) * rep;
-            fy += (ry2 / r2) * rep;
+          const rx = p.x - q.x;
+          const ry = p.y - q.y;
+          const rsq = rx * rx + ry * ry;
+          const r = Math.sqrt(rsq) + 1e-6;
+          if (r < CFG.REPULSION_RADIUS) {
+            const rep = (1 - r / CFG.REPULSION_RADIUS) * CFG.REPULSION_STRENGTH;
+            fx += (rx / r) * rep;
+            fy += (ry / r) * rep;
           }
         }
 
-        // integrate velocity with smoothing and damping for buttery motion
-        p.vx = (p.vx + fx * step) * (1 - CFG.DAMPING * Math.min(1, step));
-        p.vy = (p.vy + fy * step) * (1 - CFG.DAMPING * Math.min(1, step));
+        // integrate with smooth damping
+        p.vx = (p.vx + fx * step) * (1 - CFG.DAMPING);
+        p.vy = (p.vy + fy * step) * (1 - CFG.DAMPING);
 
-        // clamp speed to keep visuals stable (smooth cap)
+        // gentle velocity limiting
         const sp = Math.hypot(p.vx, p.vy);
         if (sp > CFG.PARTICLE_SPEED_LIMIT) {
-          p.vx = (p.vx / sp) * CFG.PARTICLE_SPEED_LIMIT;
-          p.vy = (p.vy / sp) * CFG.PARTICLE_SPEED_LIMIT;
+          const factor = CFG.PARTICLE_SPEED_LIMIT / sp;
+          p.vx *= factor;
+          p.vy *= factor;
         }
 
+        // update position
         p.x += p.vx * step;
         p.y += p.vy * step;
 
-        // wrap edges gently
-        if (p.x < -20) p.x = w + 20; else if (p.x > w + 20) p.x = -20;
-        if (p.y < -20) p.y = h + 20; else if (p.y > h + 20) p.y = -20;
+        // soft edge wrapping
+        if (p.x < -20) p.x = w + 20;
+        else if (p.x > w + 20) p.x = -20;
+        if (p.y < -20) p.y = h + 20;
+        else if (p.y > h + 20) p.y = -20;
 
-        // size pulses with beat (smooth)
-        p.s = p.baseS * (1 + 0.28 * beat * (0.8 + 0.6 * Math.sin(p.phase + time * 6)));
+        // gentle breathing size variation
+        const breathe = Math.sin(p.breathPhase) * CFG.BREATHING_AMPLITUDE;
+        p.s = p.baseS * (1 + breathe);
       }
 
-      // draw particles
-      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      // render particles with soft, continuous alpha variation
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
       for (let i = 0; i < P.length; i++) {
         const p = P[i];
-        // alpha slightly stronger on beat (makes pulses readable)
-        const alpha = 0.6 + Math.min(0.4, beat * 0.9);
-        ctx.beginPath(); ctx.globalAlpha = alpha; ctx.fillStyle = `rgba(0,0,0,${alpha})`;
-        ctx.arc(p.x + px, p.y + py, Math.max(0.6, p.s), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+        // gentle alpha variation based on position and time
+        const alphaVar = 0.6 + 0.3 * Math.sin(time * 0.5 + p.x * 0.01 + p.y * 0.008);
+        ctx.beginPath();
+        ctx.globalAlpha = alphaVar;
+        ctx.fillStyle = `rgba(0,0,0,${alphaVar})`;
+        ctx.arc(p.x + px, p.y + py, Math.max(0.4, p.s), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
       }
       ctx.restore();
 
-      // subtle dynamic grid overlay
-      ctx.save(); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 0.06;
+      // gentle animated grid overlay
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 0.05;
       for (let y = 0; y < h; y += CFG.GRID_SPACING) {
         for (let x = 0; x < w; x += CFG.GRID_SPACING) {
-          const ox = NOISE.noise((x + time * 50) * CFG.RIPPLE_SCALE, (y + time * 40) * CFG.RIPPLE_SCALE) * 1.6;
-          ctx.beginPath(); ctx.fillStyle = `rgba(0,0,0,0.08)`; ctx.arc(x + ox + px, y + ox + py, CFG.GRID_POINT_RADIUS, 0, Math.PI * 2); ctx.fill();
+          const ox = NOISE.noise((x + time * 25) * CFG.RIPPLE_SCALE, (y + time * 20) * CFG.RIPPLE_SCALE) * 0.8;
+          const oy = NOISE.noise((x + time * 18 + 500) * CFG.RIPPLE_SCALE, (y + time * 24 + 500) * CFG.RIPPLE_SCALE) * 0.6;
+          ctx.beginPath();
+          ctx.fillStyle = `rgba(0,0,0,0.06)`;
+          ctx.arc(x + ox + px, y + oy + py, CFG.GRID_POINT_RADIUS, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
       ctx.restore();
@@ -250,14 +310,14 @@ export default function RhythmicGrid() {
       raf = requestAnimationFrame(draw);
     };
 
-    // wire events
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("touchmove", onTouchMove, { passive: true } as AddEventListenerOptions);
     window.addEventListener("mouseleave", onLeave);
     window.addEventListener("resize", resize);
 
-    // init + run
-    resize(); initParticles(); raf = requestAnimationFrame(draw);
+    resize();
+    initParticles();
+    raf = requestAnimationFrame(draw);
 
     return () => {
       if (raf !== null) cancelAnimationFrame(raf);
