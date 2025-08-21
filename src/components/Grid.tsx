@@ -5,44 +5,46 @@ import { useEffect, useRef } from "react";
 /**
  * MinimalTransparentGrid — TS-safe
  * - Transparent background
- * - Static grid (drawn once, or on interaction)
+ * - Optimized for smooth interaction
  * - Minimal performance impact
  * - Fixes TypeScript 'possibly null' errors
  */
 
 const CFG = {
   GRID_SPACING: 48,
-  // MODIFIED: Base values for dots when not affected by the mouse
   GRID_POINT_RADIUS: 0.8,
   GRID_POINT_COLOR_RGB: "0,0,0",
   GRID_POINT_OPACITY: 0.4,
   DPR_LIMIT: 1.2,
-  // ADDED: Configuration for the mouse "glow" or "lens" effect
-  MOUSE_EFFECT_RADIUS: 150, // The radius of the effect around the cursor
-  MOUSE_EFFECT_MAX_POINT_RADIUS: 2.5, // The max size a point can grow to
-  MOUSE_EFFECT_MAX_OPACITY: 0.98, // The max opacity a point can have
+  MOUSE_EFFECT_RADIUS: 150,
+  MOUSE_EFFECT_MAX_POINT_RADIUS: 2.5,
+  MOUSE_EFFECT_MAX_OPACITY: 0.98,
 };
+
+// PRE-CALCULATED VALUES for efficiency
+const MOUSE_EFFECT_RADIUS_SQ = CFG.MOUSE_EFFECT_RADIUS * CFG.MOUSE_EFFECT_RADIUS;
+const UNAFFECTED_FILL_STYLE = `rgba(${CFG.GRID_POINT_COLOR_RGB}, ${CFG.GRID_POINT_OPACITY})`;
 
 export default function MinimalTransparentGrid() {
   const bgRef = useRef<HTMLCanvasElement | null>(null);
-  // ADDED: A ref to store the mouse position without causing re-renders
   const mousePos = useRef({ x: -1000, y: -1000 });
+  const animationFrameId = useRef<number | null>(null);
 
   useEffect(() => {
     const bgCanvas = bgRef.current;
     if (!bgCanvas) return;
 
     const bgCanvasEl = bgCanvas as HTMLCanvasElement;
-    const bgCtxRaw = bgCanvasEl.getContext("2d");
-    if (!bgCtxRaw) return;
-    const bgCtx = bgCtxRaw as CanvasRenderingContext2D;
+    const bgCtx = bgCanvasEl.getContext("2d", { alpha: true });
+    if (!bgCtx) return;
 
     let w = 0;
     let h = 0;
     let DPR = Math.min(window.devicePixelRatio || 1, CFG.DPR_LIMIT);
 
-    // MODIFIED: The drawing function now creates a "glow" or "lens" effect
-    function drawStaticGrid() {
+    function drawGrid() {
+      if (!bgCtx) return;
+
       bgCtx.clearRect(0, 0, w, h);
       const { x: mouseX, y: mouseY } = mousePos.current;
 
@@ -52,35 +54,51 @@ export default function MinimalTransparentGrid() {
           const finalX = x + jitter;
           const finalY = y;
 
-          // ADDED: Mouse "glow" / "lens" logic
-          const dx = finalX - mouseX;
-          const dy = finalY - mouseY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
+          const dx = finalX - mouseX;
+          const dy = finalY - mouseY;
+          const distSq = dx * dx + dy * dy;
 
-          let radius = CFG.GRID_POINT_RADIUS;
-          let opacity = CFG.GRID_POINT_OPACITY;
+          if (distSq < MOUSE_EFFECT_RADIUS_SQ) {
+            const dist = Math.sqrt(distSq);
+            const proximity = 1 - dist / CFG.MOUSE_EFFECT_RADIUS;
+            const smoothedProximity = proximity * proximity;
 
-          if (dist < CFG.MOUSE_EFFECT_RADIUS) {
-            // Proximity is 1 when mouse is on the point, 0 at the edge
-            const proximity = 1 - dist / CFG.MOUSE_EFFECT_RADIUS;
-            const smoothedProximity = proximity * proximity; // Ease-in for a smoother falloff
+            const radius = CFG.GRID_POINT_RADIUS + smoothedProximity * (CFG.MOUSE_EFFECT_MAX_POINT_RADIUS - CFG.GRID_POINT_RADIUS);
+            const opacity = CFG.GRID_POINT_OPACITY + smoothedProximity * (CFG.MOUSE_EFFECT_MAX_OPACITY - CFG.GRID_POINT_OPACITY);
 
-            radius = CFG.GRID_POINT_RADIUS + smoothedProximity * (CFG.MOUSE_EFFECT_MAX_POINT_RADIUS - CFG.GRID_POINT_RADIUS);
-            opacity = CFG.GRID_POINT_OPACITY + smoothedProximity * (CFG.MOUSE_EFFECT_MAX_OPACITY - CFG.GRID_POINT_OPACITY);
-          }
-
-          bgCtx.fillStyle = `rgba(${CFG.GRID_POINT_COLOR_RGB}, ${opacity})`;
-          bgCtx.beginPath();
-          bgCtx.arc(finalX, finalY, radius, 0, Math.PI * 2);
-          bgCtx.fill();
+            bgCtx.fillStyle = `rgba(${CFG.GRID_POINT_COLOR_RGB}, ${opacity})`;
+            bgCtx.beginPath();
+            bgCtx.arc(finalX, finalY, radius, 0, Math.PI * 2);
+            bgCtx.fill();
+          } else {
+            bgCtx.fillStyle = UNAFFECTED_FILL_STYLE;
+            bgCtx.beginPath();
+            bgCtx.arc(finalX, finalY, CFG.GRID_POINT_RADIUS, 0, Math.PI * 2);
+            bgCtx.fill();
+          }
         }
       }
     }
 
+    function animationLoop() {
+      drawGrid();
+      animationFrameId.current = null;
+    }
+
+    function onMouseMove(e: MouseEvent) {
+      mousePos.current = { x: e.clientX, y: e.clientY };
+      if (!animationFrameId.current) {
+        animationFrameId.current = requestAnimationFrame(animationLoop);
+      }
+    }
+
     function onResize() {
+      // FIXED: Add a null check here as well
+      if (!bgCtx) return;
+
       DPR = Math.min(window.devicePixelRatio || 1, CFG.DPR_LIMIT);
-      w = Math.max(1, window.innerWidth);
-      h = Math.max(1, window.innerHeight);
+      w = window.innerWidth;
+      h = window.innerHeight;
 
       bgCanvasEl.width = Math.floor(w * DPR);
       bgCanvasEl.height = Math.floor(h * DPR);
@@ -88,22 +106,19 @@ export default function MinimalTransparentGrid() {
       bgCanvasEl.style.height = `${h}px`;
       bgCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-      drawStaticGrid();
+      drawGrid();
     }
 
-    // ADDED: Mouse move handler to update position and redraw
-    function onMouseMove(e: MouseEvent) {
-      mousePos.current = { x: e.clientX, y: e.clientY };
-      drawStaticGrid();
-    }
-
     window.addEventListener("resize", onResize);
-    window.addEventListener("mousemove", onMouseMove); // ADDED
+    window.addEventListener("mousemove", onMouseMove);
     onResize();
 
     return () => {
       window.removeEventListener("resize", onResize);
-      window.removeEventListener("mousemove", onMouseMove); // ADDED
+      window.removeEventListener("mousemove", onMouseMove);
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
     };
   }, []);
 
