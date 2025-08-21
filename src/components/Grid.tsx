@@ -12,12 +12,15 @@ import { useEffect, useRef } from "react";
 
 const CFG = {
   GRID_SPACING: 48,
-  GRID_POINT_RADIUS: 0.9,
-  GRID_POINT_COLOR: "rgba(0,0,0,0.98)",
+  // MODIFIED: Base values for dots when not affected by the mouse
+  GRID_POINT_RADIUS: 0.8,
+  GRID_POINT_COLOR_RGB: "0,0,0",
+  GRID_POINT_OPACITY: 0.4,
   DPR_LIMIT: 1.2,
-  // ADDED: Configuration for the mouse repulsion effect
-  MOUSE_REPEL_RADIUS: 100, // The radius around the mouse where points are affected
-  MOUSE_REPEL_STRENGTH: 0.5, // How strongly the points are pushed away
+  // ADDED: Configuration for the mouse "glow" or "lens" effect
+  MOUSE_EFFECT_RADIUS: 150, // The radius of the effect around the cursor
+  MOUSE_EFFECT_MAX_POINT_RADIUS: 2.5, // The max size a point can grow to
+  MOUSE_EFFECT_MAX_OPACITY: 0.98, // The max opacity a point can have
 };
 
 export default function MinimalTransparentGrid() {
@@ -38,33 +41,37 @@ export default function MinimalTransparentGrid() {
     let h = 0;
     let DPR = Math.min(window.devicePixelRatio || 1, CFG.DPR_LIMIT);
 
-    // MODIFIED: The drawing function now accounts for the mouse position
+    // MODIFIED: The drawing function now creates a "glow" or "lens" effect
     function drawStaticGrid() {
       bgCtx.clearRect(0, 0, w, h);
-      bgCtx.fillStyle = CFG.GRID_POINT_COLOR;
       const { x: mouseX, y: mouseY } = mousePos.current;
 
       for (let y = 0; y < h; y += CFG.GRID_SPACING) {
         for (let x = 0; x < w; x += CFG.GRID_SPACING) {
           const jitter = Math.sin(x * 0.013 + y * 0.011) * 0.4;
+          const finalX = x + jitter;
+          const finalY = y;
 
-          // ADDED: Mouse repulsion logic
-          let finalX = x + jitter;
-          let finalY = y;
-
-          const dx = x - mouseX;
-          const dy = y - mouseY;
+          // ADDED: Mouse "glow" / "lens" logic
+          const dx = finalX - mouseX;
+          const dy = finalY - mouseY;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
-          if (dist < CFG.MOUSE_REPEL_RADIUS) {
-            const force = (1 - dist / CFG.MOUSE_REPEL_RADIUS) * CFG.MOUSE_REPEL_STRENGTH;
-            const angle = Math.atan2(dy, dx);
-            finalX += Math.cos(angle) * force * CFG.GRID_SPACING;
-            finalY += Math.sin(angle) * force * CFG.GRID_SPACING;
+          let radius = CFG.GRID_POINT_RADIUS;
+          let opacity = CFG.GRID_POINT_OPACITY;
+
+          if (dist < CFG.MOUSE_EFFECT_RADIUS) {
+            // Proximity is 1 when mouse is on the point, 0 at the edge
+            const proximity = 1 - dist / CFG.MOUSE_EFFECT_RADIUS;
+            const smoothedProximity = proximity * proximity; // Ease-in for a smoother falloff
+
+            radius = CFG.GRID_POINT_RADIUS + smoothedProximity * (CFG.MOUSE_EFFECT_MAX_POINT_RADIUS - CFG.GRID_POINT_RADIUS);
+            opacity = CFG.GRID_POINT_OPACITY + smoothedProximity * (CFG.MOUSE_EFFECT_MAX_OPACITY - CFG.GRID_POINT_OPACITY);
           }
 
+          bgCtx.fillStyle = `rgba(${CFG.GRID_POINT_COLOR_RGB}, ${opacity})`;
           bgCtx.beginPath();
-          bgCtx.arc(finalX, finalY, CFG.GRID_POINT_RADIUS, 0, Math.PI * 2);
+          bgCtx.arc(finalX, finalY, radius, 0, Math.PI * 2);
           bgCtx.fill();
         }
       }
