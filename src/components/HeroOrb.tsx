@@ -19,7 +19,7 @@ export default function HeroOrb() {
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
     // increase density closer to original but keep sprite optimization
-    let count = 700;
+    let count = 900; // increased density (kept optimizations to avoid lag)
     let r = 0;
 
     const nodes3D: Array<{ x: number; y: number; z: number; color: { h: number; s: number; l: number } }> = [];
@@ -31,7 +31,7 @@ export default function HeroOrb() {
     let frame = 0;
 
     // sprite buckets to tint nodes cheaply
-    const TINT_BUCKETS = 12; // more buckets -> less posterization
+    const TINT_BUCKETS = 16; // more buckets -> smoother color transitions at higher density // more buckets -> less posterization
     let tintedSprites: HTMLCanvasElement[] = [];
     let baseSprite: HTMLCanvasElement | null = null;
     let spriteSize = 0;
@@ -58,7 +58,7 @@ export default function HeroOrb() {
     }
 
     function createBaseSprite() {
-      spriteSize = Math.max(32, Math.floor(56 * dpr));
+      spriteSize = Math.max(30, Math.floor(48 * dpr)); // slightly smaller sprite to keep drawImage cheap at higher node counts
       const off = document.createElement("canvas");
       off.width = spriteSize;
       off.height = spriteSize;
@@ -85,7 +85,7 @@ export default function HeroOrb() {
         const t = b / Math.max(1, TINT_BUCKETS - 1);
         const hue = 190 + t * 30; // 190-220
         const sat = 60;
-        const light = 54;
+        const light = 62; // lighter shade per-sprite so additive appears of a lighter hue but we'll dim overall blend to keep it darker visually
         const off = document.createElement("canvas");
         off.width = spriteSize;
         off.height = spriteSize;
@@ -238,7 +238,10 @@ export default function HeroOrb() {
       ctx.arc(cx, cy, r * 1.02, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.globalCompositeOperation = "lighter";
+      // additive blending but dimmed slightly so overlaps don't wash out
+const ADDITIVE_ALPHA = 0.82;
+ctx.globalCompositeOperation = "lighter";
+ctx.globalAlpha = ADDITIVE_ALPHA;
 
       // LINKS - draw more links to increase perceived density
       ctx.lineWidth = 1 * dpr;
