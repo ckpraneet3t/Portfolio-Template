@@ -18,23 +18,25 @@ export default function HeroOrb() {
     let raf = 0;
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
-    // increase density closer to original but keep sprite optimization
-    let count = 900; // increased density (kept optimizations to avoid lag)
+    // Dark, cool, visually rich but optimized
+    let count = 820; // dense but not excessive
     let r = 0;
 
     const nodes3D: Array<{ x: number; y: number; z: number; color: { h: number; s: number; l: number } }> = [];
     const synapses: Array<{ from: number; to: number; progress: number }> = [];
-    let activationWave = { progress: -1.5, speed: 0.008 };
+    let activationWave = { progress: -1.6, speed: 0.0075 };
 
     let neighborCandidates: number[][] = [];
     const linkStrength = new Map<string, number>();
     let frame = 0;
 
-    // sprite buckets to tint nodes cheaply
-    const TINT_BUCKETS = 16; // more buckets -> smoother color transitions at higher density // more buckets -> less posterization
+    const TINT_BUCKETS = 16;
     let tintedSprites: HTMLCanvasElement[] = [];
     let baseSprite: HTMLCanvasElement | null = null;
     let spriteSize = 0;
+
+    // blending control for darker additive look
+    const ADDITIVE_ALPHA = 0.78; // slightly dimmer additive to avoid washout
 
     // rotation smoothing
     let rotYPrev = 0;
@@ -49,16 +51,15 @@ export default function HeroOrb() {
       canvas.style.height = `${size}px`;
       r = Math.min(canvas.width, canvas.height) * 0.36;
 
-      // adapt nodes mildly for very small screens
-      if (size < 420) count = 520;
-      else count = 700;
+      if (size < 420) count = 600;
+      else count = 820;
 
       createBaseSprite();
       createTintedSprites();
     }
 
     function createBaseSprite() {
-      spriteSize = Math.max(30, Math.floor(48 * dpr)); // slightly smaller sprite to keep drawImage cheap at higher node counts
+      spriteSize = Math.max(28, Math.floor(44 * dpr));
       const off = document.createElement("canvas");
       off.width = spriteSize;
       off.height = spriteSize;
@@ -67,9 +68,11 @@ export default function HeroOrb() {
 
       const cx = spriteSize / 2;
       const cy = spriteSize / 2;
+
+      // base: soft bright core fading quickly -> helps glow without expensive shadowBlur
       const grad = g.createRadialGradient(cx, cy, 0, cx, cy, spriteSize / 2);
       grad.addColorStop(0, "rgba(255,255,255,1)");
-      grad.addColorStop(0.16, "rgba(255,255,255,0.86)");
+      grad.addColorStop(0.12, "rgba(255,255,255,0.9)");
       grad.addColorStop(0.36, "rgba(255,255,255,0.45)");
       grad.addColorStop(1, "rgba(255,255,255,0)");
       g.fillStyle = grad;
@@ -83,9 +86,11 @@ export default function HeroOrb() {
       if (!baseSprite) return;
       for (let b = 0; b < TINT_BUCKETS; b++) {
         const t = b / Math.max(1, TINT_BUCKETS - 1);
-        const hue = 190 + t * 30; // 190-220
-        const sat = 60;
-        const light = 62; // lighter shade per-sprite so additive appears of a lighter hue but we'll dim overall blend to keep it darker visually
+        // hue range biased to cool/indigo
+        const hue = 200 + t * 40; // 200 - 240
+        const sat = 56; // moderate saturation
+        const light = 36 + Math.round(t * 6); // darker overall for dark theme
+
         const off = document.createElement("canvas");
         off.width = spriteSize;
         off.height = spriteSize;
@@ -97,6 +102,13 @@ export default function HeroOrb() {
         g.fillStyle = `hsl(${Math.round(hue)}, ${sat}%, ${light}%)`;
         g.fillRect(0, 0, spriteSize, spriteSize);
         g.globalCompositeOperation = "source-over";
+
+        // subtle radial desaturation to keep outer edges cooler
+        const edgeGrad = g.createRadialGradient(spriteSize/2, spriteSize/2, spriteSize*0.18, spriteSize/2, spriteSize/2, spriteSize/2);
+        edgeGrad.addColorStop(0, 'rgba(0,0,0,0)');
+        edgeGrad.addColorStop(1, 'rgba(10,12,20,0.18)');
+        g.fillStyle = edgeGrad;
+        g.fillRect(0,0,spriteSize,spriteSize);
 
         tintedSprites.push(off);
       }
@@ -113,9 +125,9 @@ export default function HeroOrb() {
         const x = rr * Math.sin(theta) * Math.cos(phi);
         const y = rr * Math.sin(theta) * Math.sin(phi);
         const z = rr * Math.cos(theta);
-        const hue = 190 + Math.random() * 30;
-        const sat = 55 + Math.random() * 10;
-        const light = 44 + Math.random() * 8;
+        const hue = 200 + Math.random() * 40;
+        const sat = 48 + Math.random() * 12;
+        const light = 32 + Math.random() * 10; // darker nodes
         nodes3D.push({ x, y, z, color: { h: hue, s: sat, l: light } });
       }
 
@@ -134,7 +146,7 @@ export default function HeroOrb() {
           dists.push({ idx: j, d: dx * dx + dy * dy + dz * dz });
         }
         dists.sort((a, b) => a.d - b.d);
-        neighborCandidates[i] = dists.slice(0, 24).map((x) => x.idx); // restore higher candidate count
+        neighborCandidates[i] = dists.slice(0, 20).map((x) => x.idx); // good balance
       }
 
       linkStrength.clear();
@@ -145,7 +157,7 @@ export default function HeroOrb() {
           const a = Math.min(i, j);
           const b = Math.max(i, j);
           const key = `${a}-${b}`;
-          if (!linkStrength.has(key)) linkStrength.set(key, Math.random() * 0.45 + 0.12);
+          if (!linkStrength.has(key)) linkStrength.set(key, Math.random() * 0.45 + 0.08);
         }
       }
     }
@@ -187,20 +199,21 @@ export default function HeroOrb() {
       const cx = w / 2;
       const cy = h / 2;
 
+      // clear with a very slight cool inner shadow to read as "dark"
       ctx.clearRect(0, 0, w, h);
 
       const time = prefersReducedMotion ? 0 : now * 0.001;
-      const targetRotY = time * 0.06;
-      const targetRotX = Math.sin(time * 0.18) * 0.28 + 0.28;
-      const rotY = rotYPrev + (targetRotY - rotYPrev) * 0.09;
-      const rotX = rotXPrev + (targetRotX - rotXPrev) * 0.09;
+      const targetRotY = time * 0.05;
+      const targetRotX = Math.sin(time * 0.16) * 0.28 + 0.26;
+      const rotY = rotYPrev + (targetRotY - rotYPrev) * 0.07;
+      const rotX = rotXPrev + (targetRotX - rotXPrev) * 0.07;
       rotYPrev = rotY;
       rotXPrev = rotX;
 
       activationWave.progress += activationWave.speed;
-      if (activationWave.progress > 1.5) activationWave.progress = -1.5;
+      if (activationWave.progress > 1.6) activationWave.progress = -1.6;
 
-      const lightDir = normalize({ x: 0.35, y: -0.6, z: 0.7 });
+      const lightDir = normalize({ x: 0.2, y: -0.55, z: 0.8 });
       const f = r * 1.9;
 
       const projected: Array<{
@@ -228,28 +241,33 @@ export default function HeroOrb() {
         projected.push({ x: cx + pr.x * scale, y: cy + pr.y * scale, z: zCamera, nx, ny, nz, scale, color: p.color });
       }
 
-      // slightly stronger vignette to add perceived density
-      const grad = ctx.createRadialGradient(cx, cy, r * 0.02, cx, cy, r * 1.05);
-      grad.addColorStop(0, "rgba(245,255,255,0)");
-      grad.addColorStop(0.68, "rgba(200,230,245,0.07)");
-      grad.addColorStop(1, "rgba(150,180,200,0.11)");
-      ctx.fillStyle = grad;
+      // dark cool vignette to read as "dark orb" even on lighter backgrounds
+      ctx.fillStyle = "rgba(10,14,24,0.22)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 1.03, 0, Math.PI * 2);
+      ctx.fill();
+
+      // subtle inner cool gradient
+      const innerGrad = ctx.createRadialGradient(cx, cy, r * 0.02, cx, cy, r * 1.02);
+      innerGrad.addColorStop(0, "rgba(20,30,40,0.0)");
+      innerGrad.addColorStop(0.6, "rgba(10,18,28,0.12)");
+      innerGrad.addColorStop(1, "rgba(6,10,16,0.28)");
+      ctx.fillStyle = innerGrad;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 1.02, 0, Math.PI * 2);
       ctx.fill();
 
-      // additive blending but dimmed slightly so overlaps don't wash out
-const ADDITIVE_ALPHA = 0.82;
-ctx.globalCompositeOperation = "lighter";
-ctx.globalAlpha = ADDITIVE_ALPHA;
+      // additive blending but dimmed so overlaps are cooler and not blown out
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = ADDITIVE_ALPHA;
 
-      // LINKS - draw more links to increase perceived density
+      // LINKS - darker, cool strokes with moderate density
       ctx.lineWidth = 1 * dpr;
       for (let i = 0, N = projected.length; i < N; i++) {
         const pi = projected[i];
         const cand = neighborCandidates[i];
         if (!cand) continue;
-        const maxNeighborsDraw = 12; // denser linking
+        const maxNeighborsDraw = 10;
         for (let k = 0; k < Math.min(maxNeighborsDraw, cand.length); k++) {
           const j = cand[k];
           if (j <= i) continue;
@@ -267,16 +285,17 @@ ctx.globalAlpha = ADDITIVE_ALPHA;
           const key = `${a}-${b}`;
           let s = linkStrength.get(key) ?? 0;
 
-          const jitter = (Math.random() - 0.5) * 0.012;
-          s += (baseTarget - s) * 0.06 + jitter;
-          if (Math.random() < 0.007) s = Math.max(s, Math.random() * 0.6);
+          const jitter = (Math.random() - 0.5) * 0.01;
+          s += (baseTarget - s) * 0.055 + jitter;
+          if (Math.random() < 0.0065) s = Math.max(s, Math.random() * 0.55);
           s = clamp(s, 0, 1);
           linkStrength.set(key, s);
 
           if (s > 0.03 && baseTarget > 0.01) {
-            const alpha = clamp(s * 0.7 * (1 - dist / threshold), 0, 0.78);
-            ctx.globalAlpha = alpha * 0.96;
-            ctx.strokeStyle = `rgba(55,95,120,${alpha})`;
+            const alpha = clamp(s * 0.68 * (1 - dist / threshold), 0, 0.8);
+            ctx.globalAlpha = alpha * 0.9 * ADDITIVE_ALPHA;
+            // cool indigo-blue link
+            ctx.strokeStyle = `rgba(58,110,150,${alpha})`;
             ctx.beginPath();
             ctx.moveTo(pi.x, pi.y);
             ctx.lineTo(pj.x, pj.y);
@@ -285,50 +304,50 @@ ctx.globalAlpha = ADDITIVE_ALPHA;
         }
       }
 
-      // NODES - draw tinted sprites with stronger alpha and slightly larger draw size
+      // NODES - draw tinted sprites; darker base, lighter core due to sprite
       const sprites = tintedSprites;
       const buckets = sprites.length || 1;
       for (let i = 0, N = projected.length; i < N; i++) {
         const p = projected[i];
         const ndotl = clamp(p.nx * lightDir.x + p.ny * lightDir.y + p.nz * lightDir.z, -1, 1);
         const diffuse = clamp((ndotl + 1) / 2, 0, 1);
-        const ambient = 0.36;
-        const brightness = clamp(ambient + diffuse * 0.64, 0, 1);
+        const ambient = 0.34;
+        const brightness = clamp(ambient + diffuse * 0.66, 0, 1);
 
         const wavePos = p.y / r;
         const waveProximity = 1 - Math.abs(activationWave.progress - wavePos);
         const waveGlow = clamp(waveProximity, 0, 1);
 
-        const hue = (p.color.h + time * 2.2) % 360;
-        const baseLight = p.color.l * 0.92;
-        const lightness = clamp(baseLight * brightness + waveGlow * 10, 16, 78);
+        const hue = (p.color.h + time * 1.8) % 360;
+        const baseLight = p.color.l * 0.9;
+        const lightness = clamp(baseLight * brightness + waveGlow * 8, 14, 64);
 
-        const nodeAlpha = 1.0; // stronger opacity
-        const radius = Math.max(0.34, 0.66 * (0.85 + (p.z - zMin) / (Math.max(1e-6, zMax - zMin)))) * dpr;
-        const drawSize = (radius * 3.6 * (1 + (lightness - p.color.l) * 0.015));
+        const nodeAlpha = 0.98;
+        const radius = Math.max(0.36, 0.68 * (0.85 + (p.z - zMin) / (Math.max(1e-6, zMax - zMin)))) * dpr;
+        const drawSize = radius * 3.8 * (1 + (lightness - p.color.l) * 0.012);
 
         const bucketIndex = Math.min(
           buckets - 1,
-          Math.max(0, Math.floor(((hue - 190) / 30) * (buckets - 1)))
+          Math.max(0, Math.floor(((hue - 200) / 40) * (buckets - 1)))
         );
         const sprite = sprites[bucketIndex] || baseSprite!;
         if (sprite) {
-          ctx.globalAlpha = nodeAlpha * (0.95 + waveGlow * 0.06);
+          ctx.globalAlpha = nodeAlpha * (0.9 + waveGlow * 0.06) * ADDITIVE_ALPHA;
           ctx.drawImage(sprite, p.x - drawSize / 2, p.y - drawSize / 2, drawSize, drawSize);
         } else {
-          ctx.globalAlpha = nodeAlpha;
+          ctx.globalAlpha = nodeAlpha * ADDITIVE_ALPHA;
           ctx.beginPath();
-          ctx.arc(p.x, p.y, Math.max(0.45, radius * 0.64), 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, Math.max(0.5, radius * 0.66), 0, Math.PI * 2);
           ctx.fillStyle = `hsl(${hue}, ${p.color.s}%, ${lightness}%)`;
           ctx.fill();
         }
       }
 
-      // SYNAPSE PULSES - allow slightly more pulses and stronger alpha
+      // SYNAPSE PULSES - cool, slightly brighter pulses but capped
       ctx.lineWidth = 1.5 * dpr;
       for (let i = synapses.length - 1; i >= 0; i--) {
         const synapse = synapses[i];
-        synapse.progress += 0.028;
+        synapse.progress += 0.0265;
         if (synapse.progress >= 1) {
           synapses.splice(i, 1);
         } else {
@@ -340,31 +359,33 @@ ctx.globalAlpha = ADDITIVE_ALPHA;
           const currentX = fromNode.x + (toNode.x - fromNode.x) * t;
           const currentY = fromNode.y + (toNode.y - fromNode.y) * t;
 
-          const pulseBase = 2.8 * dpr;
+          const pulseBase = 2.6 * dpr;
           const pulseRadius = pulseBase * (1 - Math.abs(0.5 - synapse.progress) * 2);
-          const pulseAlpha = 1.0 * (1 - Math.abs(0.5 - synapse.progress) * 2) * 0.98;
+          const pulseAlpha = 1.0 * (1 - Math.abs(0.5 - synapse.progress) * 2);
 
-          ctx.globalAlpha = pulseAlpha;
+          ctx.globalAlpha = pulseAlpha * 0.98;
           ctx.beginPath();
           ctx.arc(currentX, currentY, Math.max(1, pulseRadius), 0, Math.PI * 2);
-          ctx.fillStyle = `hsla(195, 85%, 60%, ${pulseAlpha})`;
+          // brighter cyan-ish pulse on dark background
+          ctx.fillStyle = `hsla(190, 92%, 60%, ${pulseAlpha * 0.96})`;
           ctx.fill();
         }
       }
 
-      // border ring
+      // border ring - subtle
+      ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 0.06;
-      ctx.strokeStyle = "rgba(43, 105, 167, 0.12)";
+      ctx.strokeStyle = "rgba(20,30,40,0.12)";
       ctx.lineWidth = 2 * dpr;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 0.99, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.globalCompositeOperation = "source-over";
+      // restore defaults
       ctx.globalAlpha = 1;
 
-      // spawn synapses more often but cap
-      if (frame % 6 === 0 && synapses.length < 22) {
+      // spawn synapses at steady rate, cap to keep perf stable
+      if (frame % 5 === 0 && synapses.length < 26) {
         const fromIndex = Math.floor(Math.random() * nodes3D.length);
         const toList = neighborCandidates[fromIndex] || [];
         const toIndex = toList.length ? toList[Math.floor(Math.random() * Math.min(6, toList.length))] : -1;
