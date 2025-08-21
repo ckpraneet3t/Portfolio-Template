@@ -18,12 +18,11 @@ export default function HeroOrb() {
     let raf = 0;
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
-    // PERFORMANCE: moderate node count (keeps visual density but reduces CPU)
-    let count = 520;
+    // increase density closer to original but keep sprite optimization
+    let count = 700;
     let r = 0;
 
-    const nodes3D: Array<{ x: number; y: number; z: number; color: { h: number; s: number; l: number } }> =
-      [];
+    const nodes3D: Array<{ x: number; y: number; z: number; color: { h: number; s: number; l: number } }> = [];
     const synapses: Array<{ from: number; to: number; progress: number }> = [];
     let activationWave = { progress: -1.5, speed: 0.008 };
 
@@ -32,7 +31,7 @@ export default function HeroOrb() {
     let frame = 0;
 
     // sprite buckets to tint nodes cheaply
-    const TINT_BUCKETS = 8;
+    const TINT_BUCKETS = 12; // more buckets -> less posterization
     let tintedSprites: HTMLCanvasElement[] = [];
     let baseSprite: HTMLCanvasElement | null = null;
     let spriteSize = 0;
@@ -43,37 +42,35 @@ export default function HeroOrb() {
 
     function sizeCanvas() {
       if (!canvas) return;
-      const size = Math.min(640, Math.floor(window.innerWidth * 0.8));
+      const size = Math.min(720, Math.floor(window.innerWidth * 0.82));
       canvas.width = Math.floor(size * dpr);
       canvas.height = Math.floor(size * dpr);
       canvas.style.width = `${size}px`;
       canvas.style.height = `${size}px`;
       r = Math.min(canvas.width, canvas.height) * 0.36;
 
-      // adapt node count mildly for very small screens
-      if (size < 420) count = 380;
-      else count = 520;
+      // adapt nodes mildly for very small screens
+      if (size < 420) count = 520;
+      else count = 700;
 
-      // rebuild sprites to match dpr/resolution
       createBaseSprite();
       createTintedSprites();
     }
 
     function createBaseSprite() {
-      spriteSize = Math.max(32, Math.floor(48 * dpr));
+      spriteSize = Math.max(32, Math.floor(56 * dpr));
       const off = document.createElement("canvas");
       off.width = spriteSize;
       off.height = spriteSize;
       const g = off.getContext("2d")!;
       g.clearRect(0, 0, spriteSize, spriteSize);
 
-      // draw a soft white radial blob (normalized alpha)
       const cx = spriteSize / 2;
       const cy = spriteSize / 2;
       const grad = g.createRadialGradient(cx, cy, 0, cx, cy, spriteSize / 2);
       grad.addColorStop(0, "rgba(255,255,255,1)");
-      grad.addColorStop(0.18, "rgba(255,255,255,0.85)");
-      grad.addColorStop(0.4, "rgba(255,255,255,0.45)");
+      grad.addColorStop(0.16, "rgba(255,255,255,0.86)");
+      grad.addColorStop(0.36, "rgba(255,255,255,0.45)");
       grad.addColorStop(1, "rgba(255,255,255,0)");
       g.fillStyle = grad;
       g.fillRect(0, 0, spriteSize, spriteSize);
@@ -86,17 +83,15 @@ export default function HeroOrb() {
       if (!baseSprite) return;
       for (let b = 0; b < TINT_BUCKETS; b++) {
         const t = b / Math.max(1, TINT_BUCKETS - 1);
-        // hue range ~190 -> 220
-        const hue = 190 + t * 30;
+        const hue = 190 + t * 30; // 190-220
         const sat = 60;
-        const light = 55;
+        const light = 54;
         const off = document.createElement("canvas");
         off.width = spriteSize;
         off.height = spriteSize;
         const g = off.getContext("2d")!;
         g.clearRect(0, 0, spriteSize, spriteSize);
 
-        // draw base sprite then colorize via source-in (cheap, done once)
         g.drawImage(baseSprite!, 0, 0);
         g.globalCompositeOperation = "source-in";
         g.fillStyle = `hsl(${Math.round(hue)}, ${sat}%, ${light}%)`;
@@ -126,7 +121,6 @@ export default function HeroOrb() {
 
       const N = nodes3D.length;
       neighborCandidates = Array.from({ length: N }, () => []);
-      // precompute neighbors (costly but only on generate)
       for (let i = 0; i < N; i++) {
         const dists: Array<{ idx: number; d: number }> = [];
         const xi = nodes3D[i].x,
@@ -140,13 +134,13 @@ export default function HeroOrb() {
           dists.push({ idx: j, d: dx * dx + dy * dy + dz * dz });
         }
         dists.sort((a, b) => a.d - b.d);
-        neighborCandidates[i] = dists.slice(0, 16).map((x) => x.idx); // fewer candidates
+        neighborCandidates[i] = dists.slice(0, 24).map((x) => x.idx); // restore higher candidate count
       }
 
       linkStrength.clear();
       for (let i = 0; i < N; i++) {
         const list = neighborCandidates[i];
-        for (let k = 0; k < Math.min(4, list.length); k++) {
+        for (let k = 0; k < Math.min(6, list.length); k++) {
           const j = list[k];
           const a = Math.min(i, j);
           const b = Math.max(i, j);
@@ -193,13 +187,11 @@ export default function HeroOrb() {
       const cx = w / 2;
       const cy = h / 2;
 
-      // clear
       ctx.clearRect(0, 0, w, h);
 
       const time = prefersReducedMotion ? 0 : now * 0.001;
       const targetRotY = time * 0.06;
       const targetRotX = Math.sin(time * 0.18) * 0.28 + 0.28;
-      // lerp rotations
       const rotY = rotYPrev + (targetRotY - rotYPrev) * 0.09;
       const rotX = rotXPrev + (targetRotX - rotXPrev) * 0.09;
       rotYPrev = rotY;
@@ -211,7 +203,6 @@ export default function HeroOrb() {
       const lightDir = normalize({ x: 0.35, y: -0.6, z: 0.7 });
       const f = r * 1.9;
 
-      // project nodes (reuse arrays, minimal allocations)
       const projected: Array<{
         x: number;
         y: number;
@@ -234,38 +225,28 @@ export default function HeroOrb() {
         if (zCamera < zMin) zMin = zCamera;
         if (zCamera > zMax) zMax = zCamera;
         const scale = f / (f + zCamera);
-        projected.push({
-          x: cx + pr.x * scale,
-          y: cy + pr.y * scale,
-          z: zCamera,
-          nx,
-          ny,
-          nz,
-          scale,
-          color: p.color,
-        });
+        projected.push({ x: cx + pr.x * scale, y: cy + pr.y * scale, z: zCamera, nx, ny, nz, scale, color: p.color });
       }
 
-      // subtle vignette (cheap)
+      // slightly stronger vignette to add perceived density
       const grad = ctx.createRadialGradient(cx, cy, r * 0.02, cx, cy, r * 1.05);
       grad.addColorStop(0, "rgba(245,255,255,0)");
-      grad.addColorStop(0.7, "rgba(200,230,245,0.05)");
-      grad.addColorStop(1, "rgba(150,180,200,0.08)");
+      grad.addColorStop(0.68, "rgba(200,230,245,0.07)");
+      grad.addColorStop(1, "rgba(150,180,200,0.11)");
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 1.02, 0, Math.PI * 2);
       ctx.fill();
 
-      // additive blending for nice overlaps
       ctx.globalCompositeOperation = "lighter";
 
-      // LINKS - reduced per-node links and smoothing
+      // LINKS - draw more links to increase perceived density
       ctx.lineWidth = 1 * dpr;
       for (let i = 0, N = projected.length; i < N; i++) {
         const pi = projected[i];
         const cand = neighborCandidates[i];
         if (!cand) continue;
-        const maxNeighborsDraw = 6; // fewer draws -> less work
+        const maxNeighborsDraw = 12; // denser linking
         for (let k = 0; k < Math.min(maxNeighborsDraw, cand.length); k++) {
           const j = cand[k];
           if (j <= i) continue;
@@ -278,21 +259,20 @@ export default function HeroOrb() {
           const threshold = (r * 0.28) * avgScale;
           const baseTarget = clamp(1 - dist / threshold, 0, 1);
 
-          const a = i < j ? i : j;
-          const b = i < j ? j : i;
+          const a = Math.min(i, j);
+          const b = Math.max(i, j);
           const key = `${a}-${b}`;
           let s = linkStrength.get(key) ?? 0;
 
-          // gentler smoothing, less jitter
           const jitter = (Math.random() - 0.5) * 0.012;
           s += (baseTarget - s) * 0.06 + jitter;
-          if (Math.random() < 0.005) s = Math.max(s, Math.random() * 0.45);
+          if (Math.random() < 0.007) s = Math.max(s, Math.random() * 0.6);
           s = clamp(s, 0, 1);
           linkStrength.set(key, s);
 
-          if (s > 0.035 && baseTarget > 0.01) {
-            const alpha = clamp(s * 0.58 * (1 - dist / threshold), 0, 0.7);
-            ctx.globalAlpha = alpha;
+          if (s > 0.03 && baseTarget > 0.01) {
+            const alpha = clamp(s * 0.7 * (1 - dist / threshold), 0, 0.78);
+            ctx.globalAlpha = alpha * 0.96;
             ctx.strokeStyle = `rgba(55,95,120,${alpha})`;
             ctx.beginPath();
             ctx.moveTo(pi.x, pi.y);
@@ -302,11 +282,9 @@ export default function HeroOrb() {
         }
       }
 
-      // NODES - draw tinted sprites
-      // precompute some local references to avoid lookups
+      // NODES - draw tinted sprites with stronger alpha and slightly larger draw size
       const sprites = tintedSprites;
       const buckets = sprites.length || 1;
-      const spriteHalf = spriteSize / 2;
       for (let i = 0, N = projected.length; i < N; i++) {
         const p = projected[i];
         const ndotl = clamp(p.nx * lightDir.x + p.ny * lightDir.y + p.nz * lightDir.z, -1, 1);
@@ -320,43 +298,34 @@ export default function HeroOrb() {
 
         const hue = (p.color.h + time * 2.2) % 360;
         const baseLight = p.color.l * 0.92;
-        const lightness = clamp(baseLight * brightness + waveGlow * 9, 16, 78);
+        const lightness = clamp(baseLight * brightness + waveGlow * 10, 16, 78);
 
-        const nodeAlpha = 0.95;
-        const radius = Math.max(0.3, 0.62 * (0.85 + (p.z - zMin) / (Math.max(1e-6, zMax - zMin)))) * dpr;
-        const drawSize = (radius * 3.2 * (1 + (lightness - p.color.l) * 0.01)); // size scales with perceived light
+        const nodeAlpha = 1.0; // stronger opacity
+        const radius = Math.max(0.34, 0.66 * (0.85 + (p.z - zMin) / (Math.max(1e-6, zMax - zMin)))) * dpr;
+        const drawSize = (radius * 3.6 * (1 + (lightness - p.color.l) * 0.015));
 
-        // pick nearest bucket by hue (approximate)
         const bucketIndex = Math.min(
           buckets - 1,
           Math.max(0, Math.floor(((hue - 190) / 30) * (buckets - 1)))
         );
         const sprite = sprites[bucketIndex] || baseSprite!;
         if (sprite) {
-          ctx.globalAlpha = nodeAlpha * (0.9 + waveGlow * 0.08);
-          // drawImage is much cheaper than per-node gradients & shadow
-          ctx.drawImage(
-            sprite,
-            p.x - drawSize / 2,
-            p.y - drawSize / 2,
-            drawSize,
-            drawSize
-          );
+          ctx.globalAlpha = nodeAlpha * (0.95 + waveGlow * 0.06);
+          ctx.drawImage(sprite, p.x - drawSize / 2, p.y - drawSize / 2, drawSize, drawSize);
         } else {
-          // fallback (very cheap): simple small circle
           ctx.globalAlpha = nodeAlpha;
           ctx.beginPath();
-          ctx.arc(p.x, p.y, Math.max(0.4, radius * 0.6), 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, Math.max(0.45, radius * 0.64), 0, Math.PI * 2);
           ctx.fillStyle = `hsl(${hue}, ${p.color.s}%, ${lightness}%)`;
           ctx.fill();
         }
       }
 
-      // SYNAPSE PULSES (fewer, eased)
+      // SYNAPSE PULSES - allow slightly more pulses and stronger alpha
       ctx.lineWidth = 1.5 * dpr;
       for (let i = synapses.length - 1; i >= 0; i--) {
         const synapse = synapses[i];
-        synapse.progress += 0.026;
+        synapse.progress += 0.028;
         if (synapse.progress >= 1) {
           synapses.splice(i, 1);
         } else {
@@ -368,9 +337,9 @@ export default function HeroOrb() {
           const currentX = fromNode.x + (toNode.x - fromNode.x) * t;
           const currentY = fromNode.y + (toNode.y - fromNode.y) * t;
 
-          const pulseBase = 2.4 * dpr;
+          const pulseBase = 2.8 * dpr;
           const pulseRadius = pulseBase * (1 - Math.abs(0.5 - synapse.progress) * 2);
-          const pulseAlpha = 0.95 * (1 - Math.abs(0.5 - synapse.progress) * 2) * 0.92;
+          const pulseAlpha = 1.0 * (1 - Math.abs(0.5 - synapse.progress) * 2) * 0.98;
 
           ctx.globalAlpha = pulseAlpha;
           ctx.beginPath();
@@ -380,7 +349,7 @@ export default function HeroOrb() {
         }
       }
 
-      // soft border ring
+      // border ring
       ctx.globalAlpha = 0.06;
       ctx.strokeStyle = "rgba(80,100,120,0.12)";
       ctx.lineWidth = 2 * dpr;
@@ -388,15 +357,14 @@ export default function HeroOrb() {
       ctx.arc(cx, cy, r * 0.99, 0, Math.PI * 2);
       ctx.stroke();
 
-      // restore
       ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
 
-      // spawn synapses less often and cap count
-      if (frame % 8 === 0 && synapses.length < 14) {
+      // spawn synapses more often but cap
+      if (frame % 6 === 0 && synapses.length < 22) {
         const fromIndex = Math.floor(Math.random() * nodes3D.length);
         const toList = neighborCandidates[fromIndex] || [];
-        const toIndex = toList.length ? toList[Math.floor(Math.random() * Math.min(4, toList.length))] : -1;
+        const toIndex = toList.length ? toList[Math.floor(Math.random() * Math.min(6, toList.length))] : -1;
         if (fromIndex !== toIndex && typeof toIndex === "number" && toIndex >= 0) {
           synapses.push({ from: fromIndex, to: toIndex, progress: 0 });
         }
