@@ -354,7 +354,7 @@ ctx.globalAlpha = ADDITIVE_ALPHA;
 
       // border ring
       ctx.globalAlpha = 0.06;
-      ctx.strokeStyle = "rgba(80,100,120,0.12)";
+      ctx.strokeStyle = "rgba(43, 105, 167, 0.12)";
       ctx.lineWidth = 2 * dpr;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 0.99, 0, Math.PI * 2);
