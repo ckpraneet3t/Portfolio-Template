@@ -35,6 +35,12 @@ export default function HeroOrb() {
     let baseSprite: HTMLCanvasElement | null = null;
     let spriteSize = 0;
 
+    // Land/water mask offscreen + raw pixel buffer for fast sampling
+    let landMask: HTMLCanvasElement | null = null;
+    let landMaskData: Uint8ClampedArray | null = null;
+    let landW = 0;
+    let landH = 0;
+
     // blending control for darker additive look
     const ADDITIVE_ALPHA = 0.78; // slightly dimmer additive to avoid washout
 
@@ -56,6 +62,7 @@ export default function HeroOrb() {
 
       createBaseSprite();
       createTintedSprites();
+      createLandMask();
     }
 
     function createBaseSprite() {
@@ -89,7 +96,7 @@ export default function HeroOrb() {
         // hue range biased to cool/indigo
         const hue = 200 + t * 40; // 200 - 240
         const sat = 56; // moderate saturation
-        const light = 36 + Math.round(t * 6); // darker overall for dark theme
+        const light = 30 + Math.round(t * 8); // darker overall for dark theme
 
         const off = document.createElement("canvas");
         off.width = spriteSize;
@@ -104,13 +111,131 @@ export default function HeroOrb() {
         g.globalCompositeOperation = "source-over";
 
         // subtle radial desaturation to keep outer edges cooler
-        const edgeGrad = g.createRadialGradient(spriteSize/2, spriteSize/2, spriteSize*0.18, spriteSize/2, spriteSize/2, spriteSize/2);
-        edgeGrad.addColorStop(0, 'rgba(0,0,0,0)');
-        edgeGrad.addColorStop(1, 'rgba(10,12,20,0.18)');
+        const edgeGrad = g.createRadialGradient(spriteSize / 2, spriteSize / 2, spriteSize * 0.18, spriteSize / 2, spriteSize / 2, spriteSize / 2);
+        edgeGrad.addColorStop(0, "rgba(0,0,0,0)");
+        edgeGrad.addColorStop(1, "rgba(6,10,18,0.18)");
         g.fillStyle = edgeGrad;
-        g.fillRect(0,0,spriteSize,spriteSize);
+        g.fillRect(0, 0, spriteSize, spriteSize);
 
         tintedSprites.push(off);
+      }
+    }
+
+    // simple hash-based pseudo-random for noise
+    function rand(x: number, y: number, seed = 0) {
+      const s = Math.sin(x * 127.1 + y * 311.7 + seed * 101.7) * 43758.5453123;
+      return s - Math.floor(s);
+    }
+
+    // fractal noise (cheap fBm using rand)
+    function fbm(x: number, y: number) {
+      let value = 0;
+      let amplitude = 0.5;
+      let frequency = 1;
+      for (let o = 0; o < 5; o++) {
+        value += amplitude * rand(x * frequency, y * frequency, o * 13);
+        frequency *= 2.0;
+        amplitude *= 0.5;
+      }
+      return value;
+    }
+
+    function createLandMask() {
+      // create an offscreen canvas sized to the drawing canvas
+      const size = Math.min(720, Math.floor(window.innerWidth * 0.82));
+      const w = Math.floor(size * dpr);
+      const h = Math.floor(size * dpr);
+      const off = document.createElement("canvas");
+      off.width = w;
+      off.height = h;
+      const g = off.getContext("2d")!;
+
+      // colors: water = lighter cool, land = darker cool
+      const water = { r: 84, g: 130, b: 160 }; // desaturated cyan-blue (lighter)
+      const land = { r: 12, g: 20, b: 34 }; // deep indigo/near-black (darker)
+
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = Math.min(w, h) * 0.36;
+
+      const img = g.createImageData(w, h);
+      const data = img.data;
+
+      // compute mask inside the circle only
+      for (let j = 0; j < h; j++) {
+        for (let i = 0; i < w; i++) {
+          const dx = (i - cx) / radius;
+          const dy = (j - cy) / radius;
+          const dist = Math.hypot(dx, dy);
+          const idx = (j * w + i) * 4;
+
+          if (dist > 1.02) {
+            // outside orb: fully transparent
+            data[idx + 0] = 0;
+            data[idx + 1] = 0;
+            data[idx + 2] = 0;
+            data[idx + 3] = 0;
+            continue;
+          }
+
+          // create an organic value using fbm on normalized coords
+          const nx = dx * 1.6 + 0.5; // stretch to shape continents
+          const ny = dy * 1.2 + 0.5;
+          let v = fbm(nx * 1.8, ny * 1.8);
+
+          // bias by radial falloff so center is more likely water/land preference
+          const radial = clamp(1 - dist, 0, 1);
+          v = v * 0.92 + radial * 0.08;
+
+          // stronger thresholding for clearer separation (small smoothness)
+          const threshold = 0.52; // controls water vs land ratio
+          const smoothness = 0.06; // smaller -> sharper coastlines
+          // use smoothstep-like mapping for crisp but slightly blended boundary
+          let t = (v - (threshold - smoothness)) / (2 * smoothness);
+          t = clamp(t, 0, 1);
+
+          // t closer to 1 => water-like (lighter), 0 => land
+          const wt = t;
+          const rcol = Math.round(land.r * (1 - wt) + water.r * wt);
+          const gcol = Math.round(land.g * (1 - wt) + water.g * wt);
+          const bcol = Math.round(land.b * (1 - wt) + water.b * wt);
+
+          // edge alpha to create coastlines (stronger contrast near coast)
+          const alpha = Math.round(255 * clamp(0.92 * (1 - dist * 0.95) * (0.52 + 0.48 * wt), 0.06, 1));
+
+          data[idx + 0] = rcol;
+          data[idx + 1] = gcol;
+          data[idx + 2] = bcol;
+          data[idx + 3] = alpha;
+        }
+      }
+
+      g.putImageData(img, 0, 0);
+
+      // soft blur by drawing scaled down/up to soften edges (cheap blur)
+      const blur = document.createElement("canvas");
+      blur.width = w;
+      blur.height = h;
+      const bg = blur.getContext("2d")!;
+      const s = Math.max(0.86, 1 - 0.03 * dpr);
+      bg.drawImage(off, 0, 0, Math.floor(w * s), Math.floor(h * s));
+      bg.globalCompositeOperation = "source-over";
+      bg.globalAlpha = 0.96;
+      bg.drawImage(off, 0, 0, w, h);
+
+      landMask = blur;
+
+      // cache raw pixel data for fast sampling (we'll sample it per-node cheaply)
+      try {
+        const cached = bg.getImageData(0, 0, w, h);
+        landMaskData = cached.data;
+        landW = w;
+        landH = h;
+      } catch (e) {
+        // getImageData may throw if canvas tainted; fallback to reading from blur canvas during draw
+        landMaskData = null;
+        landW = w;
+        landH = h;
       }
     }
 
@@ -126,8 +251,8 @@ export default function HeroOrb() {
         const y = rr * Math.sin(theta) * Math.sin(phi);
         const z = rr * Math.cos(theta);
         const hue = 200 + Math.random() * 40;
-        const sat = 48 + Math.random() * 12;
-        const light = 32 + Math.random() * 10; // darker nodes
+        const sat = 42 + Math.random() * 10;
+        const light = 26 + Math.random() * 8; // darker nodes
         nodes3D.push({ x, y, z, color: { h: hue, s: sat, l: light } });
       }
 
@@ -191,6 +316,33 @@ export default function HeroOrb() {
       return 0.5 - 0.5 * Math.cos(Math.PI * t);
     }
 
+    function sampleMaskAt(px: number, py: number, cx: number, cy: number, radius: number) {
+      // px,py are canvas coords
+      if (!landMaskData) {
+        // fallback: sample by drawing 1px into temporary canvas (rare)
+        try {
+          const sx = Math.max(0, Math.min(landW - 1, Math.floor((px / (cx * 2)) * landW + landW / 2)));
+          const sy = Math.max(0, Math.min(landH - 1, Math.floor((py / (cy * 2)) * landH + landH / 2)));
+          const idx = (sy * landW + sx) * 4;
+          if (!landMaskData) return 0;
+          return landMaskData[idx + 0] / 255; // red channel as proxy
+        } catch (e) {
+          return 0;
+        }
+      }
+
+      // map canvas coords to mask pixel coords
+      const mx = Math.floor((px / (cx * 2)) * landW + landW / 2);
+      const my = Math.floor((py / (cy * 2)) * landH + landH / 2);
+      if (mx < 0 || my < 0 || mx >= landW || my >= landH) return 0;
+      const idx = (my * landW + mx) * 4;
+      const r = landMaskData[idx];
+      // we encoded water lighter and land darker -> compute "waterness"
+      // return normalized value where 1 => water-like (lighter), 0 => land-like (darker)
+      // use red channel since we interpolated between land.r and water.r
+      return r / 255;
+    }
+
     function draw(now: number) {
       if (!ctx || !canvas) return;
       frame++;
@@ -199,7 +351,7 @@ export default function HeroOrb() {
       const cx = w / 2;
       const cy = h / 2;
 
-      // clear with a very slight cool inner shadow to read as "dark"
+      // clear underlying (keep canvas transparent outside orb)
       ctx.clearRect(0, 0, w, h);
 
       const time = prefersReducedMotion ? 0 : now * 0.001;
@@ -241,23 +393,25 @@ export default function HeroOrb() {
         projected.push({ x: cx + pr.x * scale, y: cy + pr.y * scale, z: zCamera, nx, ny, nz, scale, color: p.color });
       }
 
-      // dark cool vignette to read as "dark orb" even on lighter backgrounds
-      ctx.fillStyle = "rgba(10,14,24,0.22)";
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 1.03, 0, Math.PI * 2);
-      ctx.fill();
+      // draw land/water mask first so nodes overlay it
+      if (landMask) {
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.drawImage(landMask, 0, 0, w, h);
+        ctx.restore();
+      }
 
-      // subtle inner cool gradient
+      // dark cool inner overlay to emphasize depth
       const innerGrad = ctx.createRadialGradient(cx, cy, r * 0.02, cx, cy, r * 1.02);
-      innerGrad.addColorStop(0, "rgba(20,30,40,0.0)");
-      innerGrad.addColorStop(0.6, "rgba(10,18,28,0.12)");
-      innerGrad.addColorStop(1, "rgba(6,10,16,0.28)");
+      innerGrad.addColorStop(0, "rgba(0,0,0,0)");
+      innerGrad.addColorStop(0.6, "rgba(6,10,18,0.12)");
+      innerGrad.addColorStop(1, "rgba(4,6,12,0.28)");
       ctx.fillStyle = innerGrad;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 1.02, 0, Math.PI * 2);
       ctx.fill();
 
-      // additive blending but dimmed so overlaps are cooler and not blown out
+      // additive blending but dimmed
       ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = ADDITIVE_ALPHA;
 
@@ -309,6 +463,11 @@ export default function HeroOrb() {
       const buckets = sprites.length || 1;
       for (let i = 0, N = projected.length; i < N; i++) {
         const p = projected[i];
+
+        // sample mask to decide if this node sits on water or land
+        const maskVal = sampleMaskAt(p.x, p.y, cx, cy, r);
+        // maskVal ~ 0 => land (dark), ~1 => water (lighter)
+
         const ndotl = clamp(p.nx * lightDir.x + p.ny * lightDir.y + p.nz * lightDir.z, -1, 1);
         const diffuse = clamp((ndotl + 1) / 2, 0, 1);
         const ambient = 0.34;
@@ -320,15 +479,29 @@ export default function HeroOrb() {
 
         const hue = (p.color.h + time * 1.8) % 360;
         const baseLight = p.color.l * 0.9;
-        const lightness = clamp(baseLight * brightness + waveGlow * 8, 14, 64);
+        const lightness = clamp(baseLight * brightness + waveGlow * 8, 12, 64);
 
-        const nodeAlpha = 0.98;
+        // tweak node appearance depending on mask: on land -> darker, on water -> slightly brighter and cyan-tinged
+        const isWater = maskVal > 0.45; // threshold for water
+        let nodeAlpha = 0.98;
+        let tintHue = hue;
+        let tintSat = p.color.s;
+        if (isWater) {
+          tintHue = 195; // slightly cyan
+          tintSat = Math.max(50, tintSat);
+          nodeAlpha *= 1.02;
+        } else {
+          tintHue = 220; // deeper indigo-ish for land nodes
+          tintSat = Math.max(32, tintSat - 6);
+          nodeAlpha *= 0.88; // slightly dimmer on land
+        }
+
         const radius = Math.max(0.36, 0.68 * (0.85 + (p.z - zMin) / (Math.max(1e-6, zMax - zMin)))) * dpr;
         const drawSize = radius * 3.8 * (1 + (lightness - p.color.l) * 0.012);
 
         const bucketIndex = Math.min(
           buckets - 1,
-          Math.max(0, Math.floor(((hue - 200) / 40) * (buckets - 1)))
+          Math.max(0, Math.floor(((tintHue - 200) / 40) * (buckets - 1)))
         );
         const sprite = sprites[bucketIndex] || baseSprite!;
         if (sprite) {
@@ -338,7 +511,7 @@ export default function HeroOrb() {
           ctx.globalAlpha = nodeAlpha * ADDITIVE_ALPHA;
           ctx.beginPath();
           ctx.arc(p.x, p.y, Math.max(0.5, radius * 0.66), 0, Math.PI * 2);
-          ctx.fillStyle = `hsl(${hue}, ${p.color.s}%, ${lightness}%)`;
+          ctx.fillStyle = `hsl(${tintHue}, ${tintSat}%, ${lightness}%)`;
           ctx.fill();
         }
       }
