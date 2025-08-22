@@ -32,10 +32,8 @@ export default function Nav() {
 
     if (observerRef.current) observerRef.current.disconnect();
 
-    // OPTIMIZATION: The callback logic is simplified for clarity.
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        // Find the entry that is most visible in the viewport.
         const bestEntry = entries.reduce((best, current) => {
           return current.isIntersecting && current.intersectionRatio > (best?.intersectionRatio ?? 0)
             ? current
@@ -46,7 +44,6 @@ export default function Nav() {
           setActiveHash(`#${bestEntry.target.id}`);
         }
       },
-      // This rootMargin makes the "active" area the middle 20% of the screen.
       { rootMargin: "-40% 0px -40% 0px" }
     );
 
@@ -55,12 +52,10 @@ export default function Nav() {
       if (el) observerRef.current?.observe(el);
     });
     
-    // Set initial hash if one exists in the URL on page load.
     if (window.location.hash) {
       setActiveHash(window.location.hash);
     }
 
-    // The 'hashchange' listener was removed as it's largely redundant.
     return () => observerRef.current?.disconnect();
   }, [pathname]);
 
@@ -75,9 +70,7 @@ export default function Nav() {
     const targetElement = document.getElementById(href.slice(1));
     if (targetElement) {
       targetElement.scrollIntoView({ behavior: "smooth", block: "start" });
-      // Update the URL without a page reload.
       window.history.pushState(null, "", href);
-      // Set active hash immediately for instant UI feedback.
       setActiveHash(href);
     }
   }
@@ -94,7 +87,6 @@ export default function Nav() {
           {links.map((l) => {
             const isAnchor = l.href.startsWith("#");
             
-            // OPTIMIZATION: Logic is broken out for readability.
             const isHomeActive = l.href === "/" && pathname === "/" && !activeHash;
             const isAnchorActive = isAnchor && activeHash === l.href;
             const active = isHomeActive || isAnchorActive;
@@ -108,14 +100,19 @@ export default function Nav() {
                 <Link
                   href={l.href}
                   onClick={(e) => isAnchor && handleAnchorClick(e, l.href)}
-                  className={`relative z-10 block px-4 py-2 transition-colors ${
-                    hoveredLink === l.href || active ? "text-white" : "text-white/60"
+                  // --- MODIFICATION START ---
+                  // Added `border`, `rounded-md`, and conditional border colors.
+                  className={`relative z-10 block px-4 py-2 transition-colors border rounded-md ${
+                    hoveredLink === l.href || active 
+                      ? "text-white border-white" 
+                      : "text-white/60 border-white/60"
                   }`}
+                  // --- MODIFICATION END ---
                 >
                   {l.label}
                 </Link>
 
-                {/* The Spotlight Effect */}
+                {/* The Spotlight Effect still works, appearing behind the bordered button */}
                 {(hoveredLink === l.href || active) && (
                   <motion.div
                     layoutId="nav-spotlight"
