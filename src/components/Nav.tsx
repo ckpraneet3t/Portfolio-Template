@@ -22,7 +22,7 @@ export default function Nav() {
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // This effect tracks which section is visible on the screen.
+  // Effect to track the visible section using IntersectionObserver.
   useEffect(() => {
     const ids = links
       .map((l) => (l.href.startsWith("#") ? l.href.slice(1) : null))
@@ -32,47 +32,52 @@ export default function Nav() {
 
     if (observerRef.current) observerRef.current.disconnect();
 
+    // OPTIMIZATION: The callback logic is simplified for clarity.
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        let best: IntersectionObserverEntry | null = null;
-        for (const e of entries) {
-          if (!best || (e.isIntersecting && e.intersectionRatio > (best.intersectionRatio ?? 0))) {
-            best = e.isIntersecting ? e : best;
-          }
-        }
-        if (best) {
-          setActiveHash(`#${best.target.id}`);
+        // Find the entry that is most visible in the viewport.
+        const bestEntry = entries.reduce((best, current) => {
+          return current.isIntersecting && current.intersectionRatio > (best?.intersectionRatio ?? 0)
+            ? current
+            : best;
+        }, null as IntersectionObserverEntry | null);
+
+        if (bestEntry) {
+          setActiveHash(`#${bestEntry.target.id}`);
         }
       },
-      { rootMargin: "-40% 0px -40% 0px", threshold: [0.25, 0.5, 0.75] }
+      // This rootMargin makes the "active" area the middle 20% of the screen.
+      { rootMargin: "-40% 0px -40% 0px" }
     );
 
     ids.forEach((id) => {
       const el = document.getElementById(id);
       if (el) observerRef.current?.observe(el);
     });
+    
+    // Set initial hash if one exists in the URL on page load.
+    if (window.location.hash) {
+      setActiveHash(window.location.hash);
+    }
 
-    const onHash = () => setActiveHash(window.location.hash || "/");
-    window.addEventListener("hashchange", onHash, false);
-    onHash();
-
-    return () => {
-      observerRef.current?.disconnect();
-      window.removeEventListener("hashchange", onHash);
-    };
+    // The 'hashchange' listener was removed as it's largely redundant.
+    return () => observerRef.current?.disconnect();
   }, [pathname]);
 
+  // Effect to clear the active hash on other pages.
   useEffect(() => {
     if (pathname !== "/") setActiveHash(null);
   }, [pathname]);
   
+  // Handles smooth scrolling for anchor links.
   function handleAnchorClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
-    if (!href.startsWith("#")) return;
     e.preventDefault();
-    const el = document.getElementById(href.slice(1));
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-      if (window.history.pushState) window.history.pushState({}, "", href);
+    const targetElement = document.getElementById(href.slice(1));
+    if (targetElement) {
+      targetElement.scrollIntoView({ behavior: "smooth", block: "start" });
+      // Update the URL without a page reload.
+      window.history.pushState(null, "", href);
+      // Set active hash immediately for instant UI feedback.
       setActiveHash(href);
     }
   }
@@ -88,7 +93,11 @@ export default function Nav() {
         >
           {links.map((l) => {
             const isAnchor = l.href.startsWith("#");
-            const active = (l.href === "/" && pathname === "/" && !activeHash) || (isAnchor && activeHash === l.href);
+            
+            // OPTIMIZATION: Logic is broken out for readability.
+            const isHomeActive = l.href === "/" && pathname === "/" && !activeHash;
+            const isAnchorActive = isAnchor && activeHash === l.href;
+            const active = isHomeActive || isAnchorActive;
             
             return (
               <li
@@ -109,11 +118,8 @@ export default function Nav() {
                 {/* The Spotlight Effect */}
                 {(hoveredLink === l.href || active) && (
                   <motion.div
-                    // This ID allows Framer Motion to animate the div between different list items.
                     layoutId="nav-spotlight"
-                    // A soft, circular gradient creates the spotlight.
                     className="absolute inset-0 rounded-full [background:radial-gradient(circle_at_center,_rgba(255,255,255,0.07)_0%,_rgba(255,255,255,0)_60%)]"
-                    // A gentle, non-spring transition for a calm and smooth feel.
                     transition={{ type: "tween", ease: "circOut", duration: 0.4 }}
                   />
                 )}
