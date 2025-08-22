@@ -1,127 +1,209 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import React, { useLayoutEffect, useRef, useState } from "react";
+import { gsap } from "gsap";
+import { GoArrowUpRight } from "react-icons/go";
+import "./Nav.css"; // Make sure to import the CSS file you just created
 
-const links = [
-  { href: "/", label: "Home" },
-  { href: "#about", label: "About" },
-  { href: "#experience", label: "Experience" },
-  { href: "#projects", label: "Projects" },
-  { href: "#skills", label: "Skills" },
-  { href: "#achievements", label: "Achievements" },
-  { href: "#learning", label: "Learning & Ideas" },
-  { href: "#contact", label: "Contact" },
-];
+// --- Type Definitions ---
+type CardNavLink = {
+  label: string;
+  href: string;
+  ariaLabel: string;
+};
 
-export default function Nav() {
-  const pathname = usePathname();
-  const [activeHash, setActiveHash] = useState<string | null>(null);
-  const [hoveredLink, setHoveredLink] = useState<string | null>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
+export type CardNavItem = {
+  label: string;
+  bgColor: string;
+  textColor: string;
+  links: CardNavLink[];
+};
 
-  // This effect tracks which section is visible on the screen.
-  useEffect(() => {
-    const ids = links
-      .map((l) => (l.href.startsWith("#") ? l.href.slice(1) : null))
-      .filter(Boolean) as string[];
+export interface NavProps {
+  logo: string;
+  logoAlt?: string;
+  items: CardNavItem[];
+  className?: string;
+  ease?: string;
+  baseColor?: string;
+  menuColor?: string;
+  buttonBgColor?: string;
+  buttonTextColor?: string;
+}
 
-    if (!ids.length) return;
+// --- The Component ---
+const Nav: React.FC<NavProps> = ({
+  logo,
+  logoAlt = "Logo",
+  items,
+  className = "",
+  ease = "power3.out",
+  baseColor = "#fff",
+  menuColor,
+  buttonBgColor,
+  buttonTextColor,
+}) => {
+  const [isHamburgerOpen, setIsHamburgerOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const navRef = useRef<HTMLDivElement | null>(null);
+  const cardsRef = useRef<HTMLDivElement[]>([]);
+  const tlRef = useRef<gsap.core.Timeline | null>(null);
 
-    if (observerRef.current) observerRef.current.disconnect();
+  // --- Animation and Layout Logic ---
+  const calculateHeight = () => {
+    const navEl = navRef.current;
+    if (!navEl) return 260; // Default height
 
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        let best: IntersectionObserverEntry | null = null;
-        for (const e of entries) {
-          if (!best || (e.isIntersecting && e.intersectionRatio > (best.intersectionRatio ?? 0))) {
-            best = e.isIntersecting ? e : best;
-          }
-        }
-        if (best) {
-          setActiveHash(`#${best.target.id}`);
-        }
-      },
-      { rootMargin: "-40% 0px -40% 0px", threshold: [0.25, 0.5, 0.75] }
-    );
+    const isMobile = window.matchMedia("(max-width: 768px)").matches;
+    if (isMobile) {
+      const contentEl = navEl.querySelector(".card-nav-content") as HTMLElement;
+      if (contentEl) {
+        // Temporarily make content visible to measure its natural height
+        const wasVisible = contentEl.style.visibility;
+        contentEl.style.visibility = "visible";
+        const contentHeight = contentEl.scrollHeight;
+        contentEl.style.visibility = wasVisible;
+        // Total height is the top bar + content + padding
+        return 60 + contentHeight + 16;
+      }
+    }
+    return 260; // Default desktop height
+  };
 
-    ids.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) observerRef.current?.observe(el);
+  const createTimeline = () => {
+    const navEl = navRef.current;
+    if (!navEl) return null;
+
+    gsap.set(navEl, { height: 60, overflow: "hidden" });
+    gsap.set(cardsRef.current, { y: 50, opacity: 0 });
+
+    const tl = gsap.timeline({ paused: true });
+
+    tl.to(navEl, {
+      height: calculateHeight,
+      duration: 0.4,
+      ease,
     });
 
-    const onHash = () => setActiveHash(window.location.hash || "/");
-    window.addEventListener("hashchange", onHash, false);
-    onHash();
+    tl.to(
+      cardsRef.current,
+      { y: 0, opacity: 1, duration: 0.4, ease, stagger: 0.08 },
+      "-=0.1"
+    );
 
+    return tl;
+  };
+
+  useLayoutEffect(() => {
+    const tl = createTimeline();
+    tlRef.current = tl;
     return () => {
-      observerRef.current?.disconnect();
-      window.removeEventListener("hashchange", onHash);
+      tl?.kill();
     };
-  }, [pathname]);
+  }, [ease, items]);
 
-  useEffect(() => {
-    if (pathname !== "/") setActiveHash(null);
-  }, [pathname]);
-  
-  function handleAnchorClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
-    if (!href.startsWith("#")) return;
-    e.preventDefault();
-    const el = document.getElementById(href.slice(1));
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-      if (window.history.pushState) window.history.pushState({}, "", href);
-      setActiveHash(href);
+  useLayoutEffect(() => {
+    const handleResize = () => {
+        if (!tlRef.current) return;
+        // Re-calculate height and recreate timeline on resize to ensure it's correct
+        tlRef.current.kill();
+        const newTl = createTimeline();
+        if (newTl) {
+            if(isExpanded) newTl.progress(1); // If it was open, keep it open
+            tlRef.current = newTl;
+        }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [isExpanded, items]);
+
+
+  const toggleMenu = () => {
+    const tl = tlRef.current;
+    if (!tl) return;
+
+    if (!isExpanded) {
+      setIsHamburgerOpen(true);
+      setIsExpanded(true);
+      tl.play();
+    } else {
+      setIsHamburgerOpen(false);
+      tl.eventCallback("onReverseComplete", () => setIsExpanded(false));
+      tl.reverse();
     }
-  }
-
+  };
+  
+  const setCardRef = (i: number) => (el: HTMLDivElement | null) => {
+    if (el) cardsRef.current[i] = el;
+  };
+  
+  // --- JSX Structure ---
   return (
-    <header className="fixed inset-x-0 top-0 z-40 backdrop-blur bg-black/30 border-b border-white/10">
-      <nav className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="font-display text-lg text-white">PA</Link>
+    <div className={`card-nav-container ${className}`}>
+      <nav
+        ref={navRef}
+        className={`card-nav ${isExpanded ? "open" : ""}`}
+        style={{ backgroundColor: baseColor }}
+      >
+        <div className="card-nav-top">
+          <div
+            className={`hamburger-menu ${isHamburgerOpen ? "open" : ""}`}
+            onClick={toggleMenu}
+            role="button"
+            aria-label={isExpanded ? "Close menu" : "Open menu"}
+            tabIndex={0}
+            style={{ color: menuColor || "#000" }}
+          >
+            <div className="hamburger-line" />
+            <div className="hamburger-line" />
+          </div>
 
-        <ul
-          className="flex items-center gap-2 text-sm"
-          onMouseLeave={() => setHoveredLink(null)}
-        >
-          {links.map((l) => {
-            const isAnchor = l.href.startsWith("#");
-            const active = (l.href === "/" && pathname === "/" && !activeHash) || (isAnchor && activeHash === l.href);
-            
-            return (
-              <li
-                key={l.href}
-                className="relative"
-                onMouseEnter={() => setHoveredLink(l.href)}
-              >
-                <Link
-                  href={l.href}
-                  onClick={(e) => isAnchor && handleAnchorClick(e, l.href)}
-                  className={`relative z-10 block px-4 py-2 transition-colors ${
-                    hoveredLink === l.href || active ? "text-white" : "text-white/60"
-                  }`}
-                >
-                  {l.label}
-                </Link>
+          <div className="logo-container">
+            <a href="/" aria-label="Go to homepage">
+              <img src={logo} alt={logoAlt} className="logo" />
+            </a>
+          </div>
 
-                {/* The Spotlight Effect */}
-                {(hoveredLink === l.href || active) && (
-                  <motion.div
-                    // This ID allows Framer Motion to animate the div between different list items.
-                    layoutId="nav-spotlight"
-                    // A soft, circular gradient creates the spotlight.
-                    className="absolute inset-0 rounded-full [background:radial-gradient(circle_at_center,_rgba(255,255,255,0.07)_0%,_rgba(255,255,255,0)_60%)]"
-                    // A gentle, non-spring transition for a calm and smooth feel.
-                    transition={{ type: "tween", ease: "circOut", duration: 0.4 }}
-                  />
-                )}
-              </li>
-            );
-          })}
-        </ul>
+          <button
+            type="button"
+            className="card-nav-cta-button"
+            style={{ backgroundColor: buttonBgColor, color: buttonTextColor }}
+          >
+            Get Started
+          </button>
+        </div>
+
+        <div className="card-nav-content" aria-hidden={!isExpanded}>
+          {(items || []).slice(0, 3).map((item, idx) => (
+            <div
+              key={`${item.label}-${idx}`}
+              className="nav-card"
+              ref={setCardRef(idx)}
+              style={{ backgroundColor: item.bgColor, color: item.textColor }}
+            >
+              <div className="nav-card-label">{item.label}</div>
+              <div className="nav-card-links">
+                {item.links?.map((lnk, i) => (
+                  <a
+                    key={`${lnk.label}-${i}`}
+                    className="nav-card-link"
+                    href={lnk.href}
+                    aria-label={lnk.ariaLabel}
+                  >
+                    <GoArrowUpRight
+                      className="nav-card-link-icon"
+                      aria-hidden="true"
+                    />
+                    {lnk.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </nav>
-    </header>
+    </div>
   );
-}
+};
+
+export default Nav;
