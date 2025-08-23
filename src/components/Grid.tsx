@@ -2,14 +2,6 @@
 
 import { useEffect, useRef } from "react";
 
-/**
- * MinimalTransparentGrid — TS-safe
- * - Transparent background
- * - Optimized for smooth interaction
- * - Minimal performance impact
- * - Fixes TypeScript 'possibly null' errors
- */
-
 const CFG = {
   GRID_SPACING: 48,
   GRID_POINT_RADIUS: 0.8,
