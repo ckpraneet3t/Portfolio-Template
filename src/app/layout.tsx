@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import './globals.css';
-// REMOVED: Unused 'Inter' font import
 import { Playfair_Display, IBM_Plex_Mono } from 'next/font/google';
 import { site } from '@/content/site';
 import Background from '@/components/Background';
@@ -10,7 +9,6 @@ import Nav from '@/components/Nav';
 const fontSans = IBM_Plex_Mono({ subsets: ['latin'], weight: ['300', '400', '600'], variable: '--font-sans' });
 const fontDisplay = Playfair_Display({ subsets: ['latin'], variable: '--font-display' });
 
-// ADDED: Constants for reusable metadata to keep it DRY
 const siteTitle = 'Columbus — Portfolio';
 const siteDescription = site.description;
 
@@ -45,7 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Background />
         <Cursor />
         <Nav />
-        {/* CHANGED: Using a semantic <main> tag for better accessibility and SEO */}
+        {}
         <main className="pt-14">{children}</main>
       </body>
     </html>
