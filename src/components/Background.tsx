@@ -64,12 +64,6 @@ export default function Background() {
     const seed = 1337;
     const rand = mulberry32(seed);
 
-    // PERFORMANCE TWEAKS (kept conservative to not change appearance too much):
-    // - reduce node count
-    // - limit connection checks to nearby nodes (reduce O(n^2) cost)
-    // - precompute grain into an offscreen canvas and reuse it
-    // - debounce resize
-    // - skip some per-frame work by using a small frame counter
 
     function regenGrain(w: number, h: number) {
       const g = document.createElement('canvas');
@@ -100,7 +94,6 @@ export default function Background() {
 
     function render(t: number) {
       if (!ctx || !canvasRef.current) return;
-      // if tab hidden, don't keep rendering
       if (document.visibilityState === 'hidden') {
         rafRef.current = null;
         running = false;
